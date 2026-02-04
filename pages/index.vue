@@ -2,9 +2,10 @@
   <div class="game-container" @click="handleClick">
     <canvas ref="gameCanvas"></canvas>
 
-    <!-- Intensity Meter -->
+    <!-- UI Overlay -->
     <div class="ui-overlay">
-      <div class="intensity-meter" v-if="gameState === 'playing' || gameState === 'crushing'">
+      <!-- Intensity Meter -->
+      <div class="intensity-meter" v-if="showGameUI">
         <div class="meter-label">PUSH INTENSITY</div>
         <div class="meter-bar">
           <div class="meter-fill" :style="{ width: intensity + '%', backgroundColor: intensityColor }"></div>
@@ -13,8 +14,27 @@
         <div class="meter-hint">{{ autoPlay ? '🤖 AUTO-PLAY MODE' : 'TAP [SPACE] TO PUSH' }}</div>
       </div>
 
-      <div class="score" v-if="gameState === 'playing' || gameState === 'crushing' || gameState === 'rolling_back'">
-        SCORE: {{ Math.floor(score) }}
+      <!-- Score & Level -->
+      <div class="stats-panel" v-if="showGameUI">
+        <div class="score">SCORE: {{ Math.floor(displayScore) }}</div>
+        <div class="level">LEVEL: {{ displayLevel }}</div>
+      </div>
+
+      <!-- Progress to Peak -->
+      <div class="progress-bar" v-if="showGameUI">
+        <div class="progress-label">PROGRESS TO PEAK</div>
+        <div class="progress-track">
+          <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
+          <div class="progress-marker" v-for="i in 5" :key="i" :style="{ left: (i * 16.67) + '%' }"></div>
+        </div>
+        <div class="progress-levels">
+          <span v-for="i in 6" :key="i">L{{ i }}</span>
+        </div>
+      </div>
+
+      <!-- Level Announcement -->
+      <div class="level-announcement" v-if="levelAnnouncement">
+        <div class="level-text">{{ levelAnnouncement }}</div>
       </div>
     </div>
 
@@ -39,18 +59,18 @@
 
         <div class="credits-section">
           <h2>CAST</h2>
-          <div v-for="(item, idx) in creditsData.cast" :key="'cast-'+idx" class="credit-line">
+          <div class="credit-line" v-for="(item, idx) in castList" :key="'cast-'+idx">
             <span class="credit-role">{{ item.role }}</span>
-            <span class="credit-dots"></span>
+            <span class="credit-dots">........</span>
             <span class="credit-name">{{ item.actor }}</span>
           </div>
         </div>
 
         <div class="credits-section">
           <h2>CREW</h2>
-          <div v-for="(item, idx) in creditsData.crew" :key="'crew-'+idx" class="credit-line">
+          <div class="credit-line" v-for="(item, idx) in crewList" :key="'crew-'+idx">
             <span class="credit-role">{{ item.role }}</span>
-            <span class="credit-dots"></span>
+            <span class="credit-dots">........</span>
             <span class="credit-name">{{ item.name }}</span>
           </div>
         </div>
@@ -60,7 +80,7 @@
           <p class="credits-author">- Albert Camus</p>
         </div>
 
-        <div class="credits-section">
+        <div class="credits-section final-section">
           <p class="final-score-credits">Final Score: {{ Math.floor(finalScore) }}</p>
           <p class="credits-note">(Same as everyone else's)</p>
         </div>
@@ -99,9 +119,6 @@
           <span class="name">{{ entry.initials }}</span>
           <span class="entry-score">{{ entry.score }}</span>
         </div>
-        <p class="leaderboard-note" v-if="leaderboard.every(e => e.score === 0)">
-          "We must imagine them all happy."
-        </p>
       </div>
 
       <button @click="restartGame" class="restart-btn">PUSH AGAIN</button>
@@ -110,36 +127,107 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const gameCanvas = ref<HTMLCanvasElement | null>(null)
 let ctx: CanvasRenderingContext2D | null = null
 let animationId: number = 0
-
-// Audio context
 let audioCtx: AudioContext | null = null
 
-// Auto-play mode (for testing) - activate with ?auto in URL
+// Auto-play mode
 let autoPlayMode = false
 let lastAutoTapTime = 0
 
-// Credits data
-const creditsData = ref<any>({ cast: [], crew: [], thoughts: { normal: [], desperate: [], final: [] } })
-const creditsY = ref(600)
-
 // Game state
-const gameState = ref<'start' | 'playing' | 'crushing' | 'rolling_back' | 'final_thought' | 'credits' | 'gameover'>('start')
+const gameState = ref<'start' | 'playing' | 'crushing' | 'rolling_back' | 'rolling_over' | 'final_thought' | 'credits' | 'gameover'>('start')
 const autoPlay = ref(false)
 const score = ref(0)
+const displayScore = ref(0)
 const finalScore = ref(0)
 const intensity = ref(50)
 const leaderboard = ref<{ initials: string; score: number }[]>([])
+
+// Level system - 6 levels with increasing angles
+const LEVEL_ANGLES = [10, 20, 30, 40, 50, 60] // degrees
+const LEVEL_DISTANCES = [0, 100, 220, 360, 520, 700] // world distance where each level starts
+const PEAK_DISTANCE = 900 // where the peak is
+
+const currentLevel = ref(1)
+const displayLevel = ref(1)
+const levelAnnouncement = ref('')
+let levelAnnouncementTimer = 0
+
+// Progress
+const progressPercent = computed(() => {
+  return Math.min(100, Math.max(0, (worldDistance / PEAK_DISTANCE) * 100))
+})
+
+const showGameUI = computed(() => {
+  return ['playing', 'crushing', 'rolling_back', 'rolling_over'].includes(gameState.value)
+})
+
+// Credits data
+const castList = ref([
+  { role: 'Sisyphus', actor: 'Stick Figure' },
+  { role: 'The Boulder', actor: 'Stick Circle' },
+  { role: 'Bird #1', actor: 'Vladimir Putin' },
+  { role: 'Bird #2', actor: 'Also Vladimir Putin' },
+  { role: 'Bird #3', actor: "Look - they're all VP, ok?" },
+  { role: 'Vulture', actor: 'Vladimir Putin (in a wig)' },
+  { role: 'Gravity', actor: 'E=MC²' },
+  { role: 'The Hill', actor: 'An Unreasonable Incline' },
+  { role: 'Prometheus', actor: 'That Other Guy' },
+  { role: 'The Moon', actor: 'Definitely Not Cheese' },
+  { role: 'UFO Pilot', actor: 'Classified' },
+  { role: 'Hope', actor: 'Not Appearing In This Game' },
+  { role: 'The Top of the Hill', actor: 'Also Not Appearing' },
+  { role: 'Zeus', actor: 'Executive Producer' }
+])
+
+const crewList = ref([
+  { role: 'Director', name: 'Albert Camus (posthumously)' },
+  { role: 'Physics Consultant', name: "Sir Isaac Newton's Ghost" },
+  { role: 'Motivational Coach', name: 'Position Eliminated' },
+  { role: 'Catering', name: 'There Is No Catering' },
+  { role: 'Best Boy', name: 'There Is No Best Boy' },
+  { role: 'Existential Dread', name: 'Complimentary' }
+])
+
+const creditsY = ref(600)
+
+// Thoughts
+const normalThoughts = [
+  "Not much further... I think I can see the plateau",
+  "Wait, is it 'plateau' or 'plateu'? Or 'plato'?",
+  "What even is a hamburger? Why did I just think of that?",
+  "At least I'm getting a good workout",
+  "I wonder what Zeus is doing right now",
+  "This boulder seems heavier today",
+  "The view up here is quite nice actually",
+  "One more push... just one more...",
+  "Is that Prometheus over there? Poor guy.",
+  "I wonder if anyone is keeping score"
+]
+
+const desperateThoughts = [
+  "I don't know if I can go on much further...",
+  "My arms... they're giving out...",
+  "Is this how it ends? Again?",
+  "No no no no no...",
+  "Everything is going dark..."
+]
+
+const finalThoughts = [
+  "I had my doubts about that guy",
+  "What did I do to deserve this?",
+  "I was really hoping to see what's at the top... c'est la vie",
+  "See you tomorrow, I guess"
+]
 
 // Initials
 const initials = ref(['', '', ''])
 const initialInputs = ref<(HTMLInputElement | null)[]>([null, null, null])
 const initialsSubmitted = ref(false)
-
 const canSubmit = computed(() => initials.value.every(i => i.length === 1))
 
 const intensityColor = computed(() => {
@@ -149,71 +237,48 @@ const intensityColor = computed(() => {
 })
 
 // World state
-let worldX = 0
-let totalDistance = 0
-let hillAngle = 12 // Gentler starting angle
+let worldDistance = 0 // How far along the hill (0 to PEAK_DISTANCE and beyond)
+let worldScrollX = 0 // Camera scroll position
 let pushPower = 0
 let lastTapTime = 0
 let tapTimes: number[] = []
 let gameTime = 0
 let lastFrameTime = 0
 
-// Player position on hill (0 = bottom, increases as climbing)
-let playerHillPosition = 0
-
 // Animation
 let legPhase = 0
 let armPhase = 0
 let boulderRotation = 0
 let breathPhase = 0
-let sweatDrops: { x: number; y: number; vy: number; life: number }[] = []
 
 // Game over states
-let isCrushed = false
 let crushTime = 0
 let sisyphusFlattened = false
-let boulderWorldX = 0
 let boulderVelocity = 0
-let rollbackComplete = false
-let finalThoughtShown = false
 let finalThoughtTimer = 0
 let currentFinalThought = ''
+let reachedPeak = false
 
 // Thoughts
 let currentThought: { text: string; timer: number; fadeIn: number } | null = null
 let lastThoughtTime = 0
-let isDesperateMode = false
 
 // Environment
-interface Bird { x: number; y: number; vx: number; vy: number; flapPhase: number; type: 'bird' | 'vulture' }
-interface Tree { worldX: number; height: number; type: number }
+interface Bird { x: number; y: number; vx: number; vy: number; flapPhase: number }
 interface Cloud { x: number; y: number; speed: number; size: number }
 
 let birds: Bird[] = []
-let trees: Tree[] = []
 let clouds: Cloud[] = []
-let prometheusWorldX = -1
+let prometheusDistance = 250
 let spaceshipX = -200
 let spaceshipY = 100
 let spaceshipActive = false
 let spaceshipTimer = 0
-let vultureAttacking = false
-let vultureAttackTimer = 0
-let swattingVulture = false
 
-// Sound timing
+// Sound
 let lastFootstepTime = 0
 let lastHuffTime = 0
 let lastRollSoundTime = 0
-
-async function loadCredits() {
-  try {
-    const data = await fetch('/credits.json').then(r => r.json())
-    creditsData.value = data
-  } catch (e) {
-    console.error('Failed to load credits:', e)
-  }
-}
 
 function initAudio() {
   if (!audioCtx) {
@@ -221,14 +286,12 @@ function initAudio() {
   }
 }
 
-function play8BitSound(type: 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'swoosh') {
+function play8BitSound(type: 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup') {
   if (!audioCtx) return
-
   const osc = audioCtx.createOscillator()
   const gain = audioCtx.createGain()
   osc.connect(gain)
   gain.connect(audioCtx.destination)
-
   const now = audioCtx.currentTime
 
   switch (type) {
@@ -241,28 +304,24 @@ function play8BitSound(type: 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | '
       osc.start(now)
       osc.stop(now + 0.05)
       break
-
     case 'huff':
       osc.type = 'sawtooth'
-      osc.frequency.setValueAtTime(150 + Math.random() * 50, now)
+      osc.frequency.setValueAtTime(150, now)
       osc.frequency.exponentialRampToValueAtTime(80, now + 0.15)
       gain.gain.setValueAtTime(0.04, now)
       gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15)
       osc.start(now)
       osc.stop(now + 0.15)
       break
-
     case 'push':
       osc.type = 'triangle'
       osc.frequency.setValueAtTime(100, now)
       osc.frequency.exponentialRampToValueAtTime(180, now + 0.03)
-      osc.frequency.exponentialRampToValueAtTime(80, now + 0.08)
       gain.gain.setValueAtTime(0.12, now)
       gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08)
       osc.start(now)
       osc.stop(now + 0.08)
       break
-
     case 'slip':
       osc.type = 'sawtooth'
       osc.frequency.setValueAtTime(200, now)
@@ -272,7 +331,6 @@ function play8BitSound(type: 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | '
       osc.start(now)
       osc.stop(now + 0.2)
       break
-
     case 'crush':
       osc.type = 'square'
       osc.frequency.setValueAtTime(100, now)
@@ -282,7 +340,6 @@ function play8BitSound(type: 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | '
       osc.start(now)
       osc.stop(now + 0.5)
       break
-
     case 'roll':
       osc.type = 'triangle'
       osc.frequency.setValueAtTime(50 + Math.random() * 30, now)
@@ -291,15 +348,15 @@ function play8BitSound(type: 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | '
       osc.start(now)
       osc.stop(now + 0.08)
       break
-
-    case 'swoosh':
-      osc.type = 'sine'
-      osc.frequency.setValueAtTime(800, now)
-      osc.frequency.exponentialRampToValueAtTime(400, now + 0.3)
-      gain.gain.setValueAtTime(0.05, now)
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3)
+    case 'levelup':
+      osc.type = 'square'
+      osc.frequency.setValueAtTime(440, now)
+      osc.frequency.setValueAtTime(554, now + 0.1)
+      osc.frequency.setValueAtTime(659, now + 0.2)
+      gain.gain.setValueAtTime(0.15, now)
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4)
       osc.start(now)
-      osc.stop(now + 0.3)
+      osc.stop(now + 0.4)
       break
   }
 }
@@ -314,45 +371,30 @@ function startGame() {
 
 function resetGameState() {
   score.value = 0
+  displayScore.value = 0
   intensity.value = 50
-  worldX = 0
-  totalDistance = 0
-  hillAngle = 12
+  worldDistance = 0
+  worldScrollX = 0
   pushPower = 0
   lastTapTime = Date.now()
   tapTimes = []
   gameTime = 0
-  playerHillPosition = 0
+  currentLevel.value = 1
+  displayLevel.value = 1
+  levelAnnouncement.value = ''
+  levelAnnouncementTimer = 0
   legPhase = 0
   armPhase = 0
   boulderRotation = 0
   breathPhase = 0
-  sweatDrops = []
-  isCrushed = false
   crushTime = 0
   sisyphusFlattened = false
-  rollbackComplete = false
-  finalThoughtShown = false
-  finalThoughtTimer = 0
+  boulderVelocity = 0
   currentThought = null
   lastThoughtTime = 0
-  isDesperateMode = false
-  prometheusWorldX = -1
+  reachedPeak = false
   spaceshipActive = false
-  vultureAttacking = false
-  swattingVulture = false
 
-  // Generate trees
-  trees = []
-  for (let i = 0; i < 100; i++) {
-    trees.push({
-      worldX: i * 150 + Math.random() * 80 + 300,
-      height: 30 + Math.random() * 50,
-      type: Math.floor(Math.random() * 3)
-    })
-  }
-
-  // Generate clouds
   clouds = []
   for (let i = 0; i < 10; i++) {
     clouds.push({
@@ -363,24 +405,21 @@ function resetGameState() {
     })
   }
 
-  // Initialize birds
   birds = []
   for (let i = 0; i < 4; i++) {
     spawnBird()
   }
 }
 
-function spawnBird(isVulture = false) {
+function spawnBird() {
   const canvas = gameCanvas.value
   if (!canvas) return
-
   birds.push({
     x: canvas.width + 50 + Math.random() * 200,
     y: 40 + Math.random() * 120,
     vx: -40 - Math.random() * 40,
     vy: Math.sin(Math.random() * Math.PI * 2) * 15,
-    flapPhase: Math.random() * Math.PI * 2,
-    type: isVulture ? 'vulture' : 'bird'
+    flapPhase: Math.random() * Math.PI * 2
   })
 }
 
@@ -459,87 +498,56 @@ function handleKeyDown(e: KeyboardEvent) {
 }
 
 function registerTap() {
-  if (swattingVulture) return
-
   const now = Date.now()
   tapTimes.push(now)
   tapTimes = tapTimes.filter(t => now - t < 2000)
-
   const tapsPerSecond = tapTimes.length / 2
-  const pushAmount = 0.5 + (tapsPerSecond * 0.2)
-  pushPower += pushAmount
+  pushPower += 0.5 + (tapsPerSecond * 0.2)
   lastTapTime = now
-
   armPhase = Math.PI * 0.4
   play8BitSound('push')
-
-  if (pushPower > 1.5 && Math.random() > 0.6) {
-    sweatDrops.push({ x: Math.random() * 10 - 5, y: 0, vy: -2 - Math.random() * 2, life: 1 })
-  }
 }
 
-function getThought(type: 'normal' | 'desperate' | 'final'): string {
-  const thoughts = creditsData.value.thoughts?.[type] || []
-  if (thoughts.length === 0) {
-    if (type === 'final') return "Well... that happened."
-    if (type === 'desperate') return "I can't hold on..."
-    return "..."
+function getLevelAtDistance(dist: number): number {
+  for (let i = LEVEL_DISTANCES.length - 1; i >= 0; i--) {
+    if (dist >= LEVEL_DISTANCES[i]) return i + 1
   }
-  return thoughts[Math.floor(Math.random() * thoughts.length)]
+  return 1
+}
+
+function getAngleAtDistance(dist: number): number {
+  const level = getLevelAtDistance(dist)
+  return LEVEL_ANGLES[level - 1]
 }
 
 function maybeShowThought() {
   if (currentThought) return
   if (gameTime - lastThoughtTime < 6) return
+  if (Math.random() > 0.02) return
 
-  // Check if desperate mode
-  if (intensity.value < 25 && !isDesperateMode) {
-    isDesperateMode = true
-    currentThought = { text: getThought('desperate'), timer: 3, fadeIn: 0 }
-    lastThoughtTime = gameTime
-    return
+  const thoughts = intensity.value < 25 ? desperateThoughts : normalThoughts
+  currentThought = {
+    text: thoughts[Math.floor(Math.random() * thoughts.length)],
+    timer: 4,
+    fadeIn: 0
   }
-
-  if (intensity.value > 40) {
-    isDesperateMode = false
-  }
-
-  if (Math.random() > 0.015) return
-
-  const thought = isDesperateMode ? getThought('desperate') : getThought('normal')
-  currentThought = { text: thought, timer: 4, fadeIn: 0 }
   lastThoughtTime = gameTime
 }
 
 function maybeSpawnEvents() {
-  // Prometheus appears after distance 200
-  if (prometheusWorldX < 0 && totalDistance > 200) {
-    prometheusWorldX = worldX + 600
-  }
-
-  // Spaceship - more frequent
-  if (!spaceshipActive && totalDistance > 100 && Math.random() < 0.002) {
+  if (!spaceshipActive && worldDistance > 100 && Math.random() < 0.002) {
     spaceshipActive = true
     spaceshipX = -100
     spaceshipY = 60 + Math.random() * 80
     spaceshipTimer = 0
   }
-
-  // Vulture attack - more frequent
-  if (!vultureAttacking && totalDistance > 150 && Math.random() < 0.002) {
-    vultureAttacking = true
-    vultureAttackTimer = 0
-    spawnBird(true)
-  }
-
-  // Regular birds
-  if (birds.filter(b => b.type === 'bird').length < 5 && Math.random() < 0.02) {
+  if (birds.length < 5 && Math.random() < 0.02) {
     spawnBird()
   }
 }
 
 function gameLoop() {
-  const validStates = ['playing', 'crushing', 'rolling_back', 'final_thought', 'credits']
+  const validStates = ['playing', 'crushing', 'rolling_back', 'rolling_over', 'final_thought', 'credits']
   if (!validStates.includes(gameState.value)) return
 
   const canvas = gameCanvas.value
@@ -549,23 +557,22 @@ function gameLoop() {
   const dt = Math.min((now - lastFrameTime) / 1000, 0.05)
   lastFrameTime = now
 
-  // Auto-play mode: simulate tapping at optimal rate
+  // Auto-play
   if (autoPlayMode && gameState.value === 'playing') {
-    const autoTapInterval = 120 // ms between auto-taps (adjust for speed)
-    if (now - lastAutoTapTime > autoTapInterval) {
+    if (now - lastAutoTapTime > 120) {
       registerTap()
       lastAutoTapTime = now
     }
   }
 
   if (gameState.value === 'playing') {
-    updatePhysics(dt)
-    maybeShowThought()
-    maybeSpawnEvents()
+    updatePlaying(dt)
   } else if (gameState.value === 'crushing') {
     updateCrushing(dt)
   } else if (gameState.value === 'rolling_back') {
     updateRollingBack(dt)
+  } else if (gameState.value === 'rolling_over') {
+    updateRollingOver(dt)
   } else if (gameState.value === 'final_thought') {
     updateFinalThought(dt)
   } else if (gameState.value === 'credits') {
@@ -579,48 +586,43 @@ function gameLoop() {
   animationId = requestAnimationFrame(gameLoop)
 }
 
-function updatePhysics(dt: number) {
+function updatePlaying(dt: number) {
   const now = Date.now()
   const timeSinceLastTap = (now - lastTapTime) / 1000
 
-  // Vulture attack handling
-  if (vultureAttacking) {
-    vultureAttackTimer += dt
-    if (vultureAttackTimer > 0.5 && vultureAttackTimer < 2) {
-      swattingVulture = true
-      pushPower *= 0.92
-    } else if (vultureAttackTimer > 2) {
-      swattingVulture = false
-      vultureAttacking = false
-    }
-  }
-
-  // Decay push power
   pushPower *= 0.93
 
-  // Required force based on angle
-  const requiredForce = Math.sin(hillAngle * Math.PI / 180) * 2.2
-
-  // Net force
+  const currentAngle = getAngleAtDistance(worldDistance)
+  const requiredForce = Math.sin(currentAngle * Math.PI / 180) * 2.5
   const netForce = pushPower - requiredForce
 
   if (netForce > 0) {
-    // Moving up
-    const moveAmount = netForce * dt * 0.025
-    playerHillPosition += moveAmount
-    totalDistance += moveAmount * 100
+    const moveAmount = netForce * dt * 15
+    worldDistance += moveAmount
     score.value += netForce * dt * 10
-    worldX += moveAmount * 400
+    displayScore.value = score.value
   } else {
-    // Slipping back
-    playerHillPosition += netForce * dt * 0.03
+    worldDistance += netForce * dt * 20
+    worldDistance = Math.max(0, worldDistance)
     if (Math.random() > 0.85) play8BitSound('slip')
   }
 
-  // Clamp position
-  playerHillPosition = Math.max(0, playerHillPosition)
+  // Update camera scroll
+  worldScrollX = Math.max(0, worldDistance - 150)
 
-  // Update intensity meter
+  // Check level changes
+  const newLevel = getLevelAtDistance(worldDistance)
+  if (newLevel !== currentLevel.value) {
+    if (newLevel > currentLevel.value) {
+      levelAnnouncement.value = `LEVEL ${newLevel}!`
+      levelAnnouncementTimer = 2
+      play8BitSound('levelup')
+    }
+    currentLevel.value = newLevel
+    displayLevel.value = newLevel
+  }
+
+  // Update intensity
   const pushRatio = pushPower / (requiredForce + 0.2)
   intensity.value = Math.min(100, Math.max(0, pushRatio * 50))
 
@@ -630,31 +632,27 @@ function updatePhysics(dt: number) {
     return
   }
 
-  // Gradually increase difficulty
-  if (hillAngle < 45) {
-    hillAngle += dt * 0.15
+  // Check for reaching peak
+  if (worldDistance >= PEAK_DISTANCE) {
+    startRollingOver()
+    return
   }
+
+  maybeShowThought()
+  maybeSpawnEvents()
 }
 
 function startCrushing() {
   gameState.value = 'crushing'
-  isCrushed = true
   crushTime = 0
   finalScore.value = score.value
   play8BitSound('crush')
-
-  // Set boulder starting position for rollback
-  boulderWorldX = worldX
   boulderVelocity = 0
 }
 
 function updateCrushing(dt: number) {
   crushTime += dt
-
-  if (crushTime > 0.4) {
-    sisyphusFlattened = true
-  }
-
+  if (crushTime > 0.4) sisyphusFlattened = true
   if (crushTime > 1.2) {
     gameState.value = 'rolling_back'
     boulderVelocity = 30
@@ -662,42 +660,83 @@ function updateCrushing(dt: number) {
 }
 
 function updateRollingBack(dt: number) {
-  // Boulder accelerates as it rolls back
   boulderVelocity += 150 * dt
-  boulderWorldX -= boulderVelocity * dt
+  worldDistance -= boulderVelocity * dt * 0.15
+  worldDistance = Math.max(0, worldDistance)
 
-  // Camera follows boulder
-  const targetWorldX = Math.max(0, boulderWorldX - 200)
-  worldX += (targetWorldX - worldX) * 3 * dt
+  // Score decreases as boulder rolls back!
+  displayScore.value = Math.max(0, score.value * (worldDistance / (finalScore.value / 10 + 1)))
 
-  // Rolling sound
+  // Update level display based on boulder position
+  displayLevel.value = getLevelAtDistance(worldDistance)
+
+  // Camera follows
+  worldScrollX = Math.max(0, worldDistance - 150)
+
   if (gameTime - lastRollSoundTime > 0.12) {
     play8BitSound('roll')
     lastRollSoundTime = gameTime
   }
 
-  // Boulder rotation
-  boulderRotation -= boulderVelocity * dt * 0.015
+  boulderRotation -= boulderVelocity * dt * 0.02
 
-  // Check if reached bottom
-  if (boulderWorldX <= 50) {
-    boulderWorldX = 50
+  if (worldDistance <= 5) {
+    worldDistance = 0
     boulderVelocity *= 0.7
-
     if (boulderVelocity < 20) {
-      // Boulder stopped - show final thought
+      displayScore.value = 0
+      finalScore.value = 0
       gameState.value = 'final_thought'
-      currentFinalThought = getThought('final')
+      currentFinalThought = finalThoughts[Math.floor(Math.random() * finalThoughts.length)]
       finalThoughtTimer = 0
     }
   }
 }
 
+function startRollingOver() {
+  gameState.value = 'rolling_over'
+  reachedPeak = true
+  boulderVelocity = 50
+  finalScore.value = score.value
+}
+
+function updateRollingOver(dt: number) {
+  boulderVelocity += 100 * dt
+  worldDistance += boulderVelocity * dt * 0.1
+
+  // Score stays the same when going over (you made it!)
+  // But then resets as it rolls away
+  const overPeakDist = worldDistance - PEAK_DISTANCE
+  if (overPeakDist > 200) {
+    displayScore.value = Math.max(0, finalScore.value * (1 - (overPeakDist - 200) / 300))
+  }
+
+  // Level counts back down on other side
+  const effectiveDistance = Math.max(0, PEAK_DISTANCE - (worldDistance - PEAK_DISTANCE))
+  displayLevel.value = getLevelAtDistance(effectiveDistance)
+
+  worldScrollX = worldDistance - 150
+
+  if (gameTime - lastRollSoundTime > 0.1) {
+    play8BitSound('roll')
+    lastRollSoundTime = gameTime
+  }
+
+  boulderRotation += boulderVelocity * dt * 0.02
+
+  // Boulder rolls away
+  if (worldDistance > PEAK_DISTANCE + 600) {
+    displayScore.value = 0
+    finalScore.value = 0
+    gameState.value = 'final_thought'
+    currentFinalThought = "Well, there it goes..."
+    finalThoughtTimer = 0
+  }
+}
+
 function updateFinalThought(dt: number) {
   finalThoughtTimer += dt
-
   if (finalThoughtTimer > 4) {
-    // Start credits
     gameState.value = 'credits'
     creditsY.value = 500
   }
@@ -705,8 +744,7 @@ function updateFinalThought(dt: number) {
 
 function updateCredits(dt: number) {
   creditsY.value -= 40 * dt
-
-  if (creditsY.value < -800) {
+  if (creditsY.value < -900) {
     showGameOver()
   }
 }
@@ -717,12 +755,10 @@ function updateAnimations(dt: number) {
 
   if (pushPower > 0.3 && gameState.value === 'playing') {
     legPhase += dt * pushPower * 10
-
     if (gameTime - lastFootstepTime > 0.2 / Math.max(0.5, pushPower)) {
       play8BitSound('footstep')
       lastFootstepTime = gameTime
     }
-
     if (gameTime - lastHuffTime > 0.7) {
       play8BitSound('huff')
       lastHuffTime = gameTime
@@ -731,89 +767,73 @@ function updateAnimations(dt: number) {
 
   armPhase *= 0.88
 
-  if (gameState.value === 'playing') {
-    if (pushPower > 0.3) {
-      boulderRotation += dt * pushPower * 2.5
-    }
+  if (gameState.value === 'playing' && pushPower > 0.3) {
+    boulderRotation += dt * pushPower * 2.5
   }
 
-  // Sweat drops
-  sweatDrops = sweatDrops.filter(drop => {
-    drop.y += drop.vy * 60 * dt
-    drop.vy += 8 * dt
-    drop.life -= dt
-    return drop.life > 0
-  })
-
-  // Thought bubble
   if (currentThought && gameState.value === 'playing') {
     currentThought.fadeIn = Math.min(1, currentThought.fadeIn + dt * 3)
     currentThought.timer -= dt
-    if (currentThought.timer <= 0) {
-      currentThought = null
-    }
+    if (currentThought.timer <= 0) currentThought = null
+  }
+
+  if (levelAnnouncementTimer > 0) {
+    levelAnnouncementTimer -= dt
+    if (levelAnnouncementTimer <= 0) levelAnnouncement.value = ''
   }
 }
 
 function updateEnvironment(dt: number) {
-  // Clouds
   clouds.forEach(cloud => {
     cloud.x -= cloud.speed * dt
     if (cloud.x < -100) cloud.x = 2000 + Math.random() * 500
   })
 
-  // Birds
   birds = birds.filter(bird => {
     bird.x += bird.vx * dt
     bird.y += bird.vy * dt
     bird.vy += Math.sin(gameTime * 3 + bird.x * 0.01) * 20 * dt
     bird.flapPhase += dt * 12
-
-    // Vulture attack behavior
-    if (bird.type === 'vulture' && vultureAttacking && vultureAttackTimer > 0.3) {
-      const targetY = 150
-      bird.vy += (targetY - bird.y) * dt
-    }
-
     return bird.x > -100
   })
 
-  // Spaceship
   if (spaceshipActive) {
     spaceshipTimer += dt
     spaceshipX += 120 * dt
     spaceshipY += Math.sin(spaceshipTimer * 2) * 15 * dt
-
-    if (spaceshipTimer > 0.3 && spaceshipTimer < 0.5) {
-      play8BitSound('swoosh')
-    }
-
-    const canvas = gameCanvas.value
-    if (spaceshipX > (canvas?.width || 1000) + 100) {
+    if (spaceshipX > (gameCanvas.value?.width || 1000) + 100) {
       spaceshipActive = false
     }
   }
 }
 
-// Get Y position on hill for a given world X position
-function getHillY(worldPosX: number, canvasHeight: number): number {
-  const hillBaseY = canvasHeight - 60
-  const angleRad = hillAngle * Math.PI / 180
+function getHillYAtScreenX(screenX: number, height: number): number {
+  const worldX = screenX + worldScrollX
+  const hillBaseY = height - 60
 
-  // Simple linear slope that starts from the left
-  const heightGain = worldPosX * Math.tan(angleRad) * 0.4
-  return hillBaseY - heightGain
-}
+  // Find which segment we're in and calculate Y
+  let y = hillBaseY
+  let lastSegmentEnd = 0
 
-function getScreenX(worldPosX: number): number {
-  // Player stays at ~35% of screen, world scrolls
-  const canvas = gameCanvas.value
-  if (!canvas) return 100
+  for (let level = 1; level <= 6; level++) {
+    const segmentStart = LEVEL_DISTANCES[level - 1]
+    const segmentEnd = level < 6 ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
+    const angle = LEVEL_ANGLES[level - 1]
 
-  const playerScreenX = canvas.width * 0.35
-  const playerWorldX = worldX
+    if (worldX >= segmentStart) {
+      const distInSegment = Math.min(worldX, segmentEnd) - segmentStart
+      y -= Math.tan(angle * Math.PI / 180) * distInSegment * 0.5
+      lastSegmentEnd = segmentEnd
+    }
+  }
 
-  return playerScreenX + (worldPosX - playerWorldX)
+  // After peak, go back down
+  if (worldX > PEAK_DISTANCE) {
+    const overPeak = worldX - PEAK_DISTANCE
+    y += Math.tan(45 * Math.PI / 180) * overPeak * 0.5
+  }
+
+  return y
 }
 
 function render() {
@@ -823,32 +843,17 @@ function render() {
   const width = canvas.width
   const height = canvas.height
 
-  // Sky gradient
+  // Sky
   const skyGradient = ctx.createLinearGradient(0, 0, 0, height)
-  const phase = Math.min(10, totalDistance / 80)
-
-  if (phase < 3) {
-    skyGradient.addColorStop(0, '#1a1a2e')
-    skyGradient.addColorStop(1, '#16213e')
-  } else if (phase < 6) {
-    skyGradient.addColorStop(0, '#1a1a4e')
-    skyGradient.addColorStop(0.5, '#2d1b4e')
-    skyGradient.addColorStop(1, '#16213e')
-  } else {
-    skyGradient.addColorStop(0, '#0f0f23')
-    skyGradient.addColorStop(0.3, '#1e1a4e')
-    skyGradient.addColorStop(0.7, '#2d1b4e')
-    skyGradient.addColorStop(1, '#1e3a5f')
-  }
-
+  skyGradient.addColorStop(0, '#1a1a2e')
+  skyGradient.addColorStop(0.5, '#1a1a4e')
+  skyGradient.addColorStop(1, '#16213e')
   ctx.fillStyle = skyGradient
   ctx.fillRect(0, 0, width, height)
 
   drawStars(width, height)
   drawMoon(width, height)
   drawClouds(width)
-  drawDistantMountains(width, height)
-  drawTrees(width, height)
   drawHill(width, height)
   drawPrometheus(width, height)
   drawSpaceship()
@@ -860,19 +865,14 @@ function render() {
 
 function drawStars(width: number, height: number) {
   if (!ctx) return
-  const phase = Math.min(10, totalDistance / 80)
-  if (phase < 1) return
-
   ctx.fillStyle = '#ffffff'
-  for (let i = 0; i < Math.min(phase * 20, 180); i++) {
-    const baseX = (Math.sin(i * 123.456) * 0.5 + 0.5) * width * 2
-    const x = ((baseX - worldX * 0.02) % (width + 100))
+  for (let i = 0; i < 100; i++) {
+    const x = ((Math.sin(i * 123.456) * 0.5 + 0.5) * width * 2 - worldScrollX * 0.02) % width
     const y = (Math.cos(i * 789.012) * 0.5 + 0.5) * height * 0.5
     const twinkle = Math.sin(gameTime * 2 + i) * 0.5 + 0.5
-    const size = twinkle * 1.5 + 0.5
     ctx.globalAlpha = 0.3 + twinkle * 0.7
     ctx.beginPath()
-    ctx.arc(x, y, size, 0, Math.PI * 2)
+    ctx.arc(x, y, twinkle * 1.5 + 0.5, 0, Math.PI * 2)
     ctx.fill()
   }
   ctx.globalAlpha = 1
@@ -880,11 +880,8 @@ function drawStars(width: number, height: number) {
 
 function drawMoon(width: number, height: number) {
   if (!ctx) return
-  const phase = Math.min(10, totalDistance / 80)
-  if (phase < 2) return
-
-  const moonX = width - 100 - (worldX * 0.01) % 50
-  const moonY = 70 + Math.sin(gameTime * 0.1) * 5
+  const moonX = width - 100
+  const moonY = 70
 
   const glow = ctx.createRadialGradient(moonX, moonY, 25, moonX, moonY, 70)
   glow.addColorStop(0, 'rgba(255, 255, 200, 0.3)')
@@ -898,130 +895,35 @@ function drawMoon(width: number, height: number) {
   ctx.beginPath()
   ctx.arc(moonX, moonY, 30, 0, Math.PI * 2)
   ctx.fill()
-
-  ctx.fillStyle = '#d0d0b0'
-  ctx.beginPath()
-  ctx.arc(moonX - 8, moonY - 6, 5, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.beginPath()
-  ctx.arc(moonX + 6, moonY + 4, 3, 0, Math.PI * 2)
-  ctx.fill()
 }
 
 function drawClouds(width: number) {
   if (!ctx) return
-
   ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
   clouds.forEach(cloud => {
-    const x = ((cloud.x - worldX * 0.05) % (width + 200))
-    ctx.beginPath()
-    ctx.arc(x, cloud.y, cloud.size * 0.5, 0, Math.PI * 2)
-    ctx.arc(x + cloud.size * 0.35, cloud.y - cloud.size * 0.15, cloud.size * 0.4, 0, Math.PI * 2)
-    ctx.arc(x + cloud.size * 0.7, cloud.y, cloud.size * 0.45, 0, Math.PI * 2)
-    ctx.fill()
+    const x = ((cloud.x - worldScrollX * 0.05) % (width + 200))
+    ctx!.beginPath()
+    ctx!.arc(x, cloud.y, cloud.size * 0.5, 0, Math.PI * 2)
+    ctx!.arc(x + cloud.size * 0.35, cloud.y - cloud.size * 0.15, cloud.size * 0.4, 0, Math.PI * 2)
+    ctx!.arc(x + cloud.size * 0.7, cloud.y, cloud.size * 0.45, 0, Math.PI * 2)
+    ctx!.fill()
   })
-}
-
-function drawDistantMountains(width: number, height: number) {
-  if (!ctx) return
-  const phase = Math.min(10, totalDistance / 80)
-  if (phase < 2) return
-
-  ctx.fillStyle = '#2a2a4a'
-  ctx.beginPath()
-  ctx.moveTo(0, height * 0.6)
-  for (let x = 0; x <= width; x += 25) {
-    const wx = x + worldX * 0.03
-    const y = height * 0.6 - Math.sin(wx * 0.004) * 50 - Math.cos(wx * 0.006) * 35
-    ctx.lineTo(x, y)
-  }
-  ctx.lineTo(width, height)
-  ctx.lineTo(0, height)
-  ctx.fill()
-
-  if (phase > 3) {
-    ctx.fillStyle = '#222238'
-    ctx.beginPath()
-    ctx.moveTo(0, height * 0.68)
-    for (let x = 0; x <= width; x += 20) {
-      const wx = x + worldX * 0.06
-      const y = height * 0.68 - Math.sin(wx * 0.005) * 40 - Math.cos(wx * 0.003) * 25
-      ctx.lineTo(x, y)
-    }
-    ctx.lineTo(width, height)
-    ctx.lineTo(0, height)
-    ctx.fill()
-  }
-}
-
-function drawTrees(width: number, height: number) {
-  if (!ctx) return
-  const phase = Math.min(10, totalDistance / 80)
-  if (phase < 3) return
-
-  ctx.fillStyle = '#1a1a3a'
-  trees.forEach(tree => {
-    const screenX = getScreenX(tree.worldX)
-    if (screenX < -50 || screenX > width + 50) return
-
-    const treeY = getHillY(tree.worldX, height)
-    drawTreeShape(screenX, treeY, tree.height, tree.type)
-  })
-}
-
-function drawTreeShape(x: number, baseY: number, treeHeight: number, type: number) {
-  if (!ctx) return
-
-  if (type === 0) {
-    ctx.beginPath()
-    ctx.moveTo(x, baseY - treeHeight)
-    ctx.lineTo(x - treeHeight * 0.35, baseY)
-    ctx.lineTo(x + treeHeight * 0.35, baseY)
-    ctx.closePath()
-    ctx.fill()
-  } else if (type === 1) {
-    ctx.beginPath()
-    ctx.arc(x, baseY - treeHeight * 0.55, treeHeight * 0.35, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillRect(x - 2, baseY - treeHeight * 0.25, 4, treeHeight * 0.25)
-  } else {
-    ctx.strokeStyle = '#1a1a3a'
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.moveTo(x, baseY)
-    ctx.lineTo(x, baseY - treeHeight)
-    ctx.moveTo(x, baseY - treeHeight * 0.7)
-    ctx.lineTo(x - 12, baseY - treeHeight * 0.5)
-    ctx.moveTo(x, baseY - treeHeight * 0.85)
-    ctx.lineTo(x + 10, baseY - treeHeight * 0.65)
-    ctx.stroke()
-    ctx.fillStyle = '#1a1a3a'
-  }
 }
 
 function drawHill(width: number, height: number) {
   if (!ctx) return
 
-  const hillBaseY = height - 60
-
-  // Draw hill surface
+  // Draw hill with distinct angle segments
   ctx.fillStyle = '#3d3d3d'
   ctx.beginPath()
+  ctx.moveTo(0, getHillYAtScreenX(0, height))
 
-  // Start from left edge
-  const leftWorldX = worldX - 100
-  const leftScreenX = getScreenX(leftWorldX)
-  ctx.moveTo(leftScreenX, getHillY(leftWorldX, height))
-
-  // Draw the slope line across the screen
-  for (let screenX = -50; screenX <= width + 50; screenX += 15) {
-    const wx = worldX + (screenX - width * 0.35)
-    const y = getHillY(wx, height)
-    ctx.lineTo(screenX, y)
+  for (let x = 0; x <= width + 20; x += 5) {
+    ctx.lineTo(x, getHillYAtScreenX(x, height))
   }
 
-  ctx.lineTo(width + 50, height)
-  ctx.lineTo(-50, height)
+  ctx.lineTo(width + 20, height)
+  ctx.lineTo(0, height)
   ctx.closePath()
   ctx.fill()
 
@@ -1029,74 +931,55 @@ function drawHill(width: number, height: number) {
   ctx.strokeStyle = '#ffffff'
   ctx.lineWidth = 3
   ctx.beginPath()
-
-  let started = false
-  for (let screenX = -50; screenX <= width + 50; screenX += 15) {
-    const wx = worldX + (screenX - width * 0.35)
-    const y = getHillY(wx, height)
-    if (!started) {
-      ctx.moveTo(screenX, y)
-      started = true
-    } else {
-      ctx.lineTo(screenX, y)
-    }
+  ctx.moveTo(0, getHillYAtScreenX(0, height))
+  for (let x = 0; x <= width + 20; x += 5) {
+    ctx.lineTo(x, getHillYAtScreenX(x, height))
   }
   ctx.stroke()
 
-  // Flat ground at the very start
-  if (worldX < 200) {
-    ctx.beginPath()
-    ctx.moveTo(0, hillBaseY)
-    const groundEnd = getScreenX(0)
-    if (groundEnd > 0) {
-      ctx.lineTo(groundEnd, hillBaseY)
+  // Draw angle change markers
+  ctx.strokeStyle = '#666'
+  ctx.lineWidth = 1
+  for (let level = 2; level <= 6; level++) {
+    const markerWorldX = LEVEL_DISTANCES[level - 1]
+    const screenX = markerWorldX - worldScrollX
+    if (screenX > 0 && screenX < width) {
+      const y = getHillYAtScreenX(screenX, height)
+      ctx.beginPath()
+      ctx.moveTo(screenX, y)
+      ctx.lineTo(screenX, y - 20)
       ctx.stroke()
+
+      ctx.fillStyle = '#666'
+      ctx.font = '10px monospace'
+      ctx.fillText(`L${level}`, screenX - 8, y - 25)
     }
   }
 
-  // Draw flowers
-  const flowerPhase = Math.min(10, totalDistance / 80)
-  if (flowerPhase > 4) {
-    for (let i = 0; i < 20; i++) {
-      const flowerWX = i * 120 + 150
-      const screenX = getScreenX(flowerWX)
-      if (screenX < -20 || screenX > width + 20) continue
-      const flowerY = getHillY(flowerWX, height) - 3
-      drawFlower(screenX, flowerY, i)
-    }
-  }
-}
-
-function drawFlower(x: number, y: number, seed: number) {
-  if (!ctx) return
-  const colors = ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff', '#ff6b9d']
-  ctx.fillStyle = colors[seed % colors.length]
-  const size = 3 + (seed % 2)
-
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2 + gameTime * 0.2
-    const px = x + Math.cos(angle) * size
-    const py = y + Math.sin(angle) * size * 0.5
+  // Peak marker
+  const peakScreenX = PEAK_DISTANCE - worldScrollX
+  if (peakScreenX > 0 && peakScreenX < width) {
+    ctx.fillStyle = '#ffd700'
     ctx.beginPath()
-    ctx.arc(px, py, size * 0.5, 0, Math.PI * 2)
+    ctx.moveTo(peakScreenX, getHillYAtScreenX(peakScreenX, height) - 10)
+    ctx.lineTo(peakScreenX - 8, getHillYAtScreenX(peakScreenX, height) + 5)
+    ctx.lineTo(peakScreenX + 8, getHillYAtScreenX(peakScreenX, height) + 5)
+    ctx.closePath()
     ctx.fill()
-  }
 
-  ctx.fillStyle = '#ffd700'
-  ctx.beginPath()
-  ctx.arc(x, y, size * 0.3, 0, Math.PI * 2)
-  ctx.fill()
+    ctx.fillStyle = '#ffd700'
+    ctx.font = '12px monospace'
+    ctx.fillText('PEAK', peakScreenX - 18, getHillYAtScreenX(peakScreenX, height) - 15)
+  }
 }
 
 function drawPrometheus(width: number, height: number) {
-  if (!ctx || prometheusWorldX < 0) return
-
-  const screenX = getScreenX(prometheusWorldX)
+  if (!ctx) return
+  const screenX = prometheusDistance - worldScrollX
   if (screenX < -50 || screenX > width + 100) return
 
-  const hillY = getHillY(prometheusWorldX, height)
+  const hillY = getHillYAtScreenX(screenX, height)
 
-  // Rock
   ctx.fillStyle = '#444'
   ctx.beginPath()
   ctx.ellipse(screenX, hillY - 15, 22, 18, 0, 0, Math.PI * 2)
@@ -1104,46 +987,20 @@ function drawPrometheus(width: number, height: number) {
 
   ctx.strokeStyle = '#fff'
   ctx.lineWidth = 2
-
-  // Torso
   ctx.beginPath()
   ctx.moveTo(screenX, hillY - 35)
   ctx.lineTo(screenX, hillY - 12)
   ctx.stroke()
 
-  // Arms chained out
   ctx.beginPath()
   ctx.moveTo(screenX - 22, hillY - 30)
-  ctx.lineTo(screenX, hillY - 30)
   ctx.lineTo(screenX + 22, hillY - 30)
   ctx.stroke()
 
-  // Chains
-  ctx.strokeStyle = '#666'
-  ctx.setLineDash([2, 2])
-  ctx.beginPath()
-  ctx.moveTo(screenX - 22, hillY - 30)
-  ctx.lineTo(screenX - 26, hillY - 20)
-  ctx.moveTo(screenX + 22, hillY - 30)
-  ctx.lineTo(screenX + 26, hillY - 20)
-  ctx.stroke()
-  ctx.setLineDash([])
-
-  // Head
-  ctx.strokeStyle = '#fff'
   ctx.beginPath()
   ctx.arc(screenX, hillY - 42, 7, 0, Math.PI * 2)
   ctx.stroke()
 
-  // Legs
-  ctx.beginPath()
-  ctx.moveTo(screenX, hillY - 12)
-  ctx.lineTo(screenX - 8, hillY + 2)
-  ctx.moveTo(screenX, hillY - 12)
-  ctx.lineTo(screenX + 8, hillY + 2)
-  ctx.stroke()
-
-  // Label
   ctx.fillStyle = '#666'
   ctx.font = '9px monospace'
   ctx.fillText('Prometheus', screenX - 28, hillY + 15)
@@ -1151,7 +1008,6 @@ function drawPrometheus(width: number, height: number) {
 
 function drawSpaceship() {
   if (!ctx || !spaceshipActive) return
-
   const x = spaceshipX
   const y = spaceshipY
 
@@ -1168,81 +1024,50 @@ function drawSpaceship() {
   ctx.fillStyle = '#ff0'
   for (let i = 0; i < 5; i++) {
     const angle = (i / 5) * Math.PI + gameTime * 6
-    const lx = x + Math.cos(angle) * 22
     ctx.beginPath()
-    ctx.arc(lx, y + 2, 2.5, 0, Math.PI * 2)
-    ctx.fill()
-  }
-
-  if (Math.sin(gameTime * 12) > 0.7) {
-    ctx.fillStyle = 'rgba(100, 255, 100, 0.15)'
-    ctx.beginPath()
-    ctx.moveTo(x - 12, y + 9)
-    ctx.lineTo(x + 12, y + 9)
-    ctx.lineTo(x + 35, y + 120)
-    ctx.lineTo(x - 35, y + 120)
-    ctx.closePath()
+    ctx.arc(x + Math.cos(angle) * 22, y + 2, 2.5, 0, Math.PI * 2)
     ctx.fill()
   }
 }
 
 function drawBirds() {
   if (!ctx) return
-
   birds.forEach(bird => {
     const flapY = Math.sin(bird.flapPhase) * 4
-
-    if (bird.type === 'vulture') {
-      ctx.strokeStyle = '#800'
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.moveTo(bird.x - 12, bird.y)
-      ctx.lineTo(bird.x + 8, bird.y)
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.moveTo(bird.x, bird.y)
-      ctx.lineTo(bird.x - 18, bird.y - 12 + flapY)
-      ctx.moveTo(bird.x, bird.y)
-      ctx.lineTo(bird.x + 18, bird.y - 12 + flapY)
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.arc(bird.x + 10, bird.y - 2, 4, 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.moveTo(bird.x + 14, bird.y - 2)
-      ctx.lineTo(bird.x + 20, bird.y)
-      ctx.stroke()
-    } else {
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.moveTo(bird.x - 4, bird.y + flapY)
-      ctx.lineTo(bird.x, bird.y)
-      ctx.lineTo(bird.x + 4, bird.y + flapY)
-      ctx.stroke()
-    }
+    ctx!.strokeStyle = '#fff'
+    ctx!.lineWidth = 1
+    ctx!.beginPath()
+    ctx!.moveTo(bird.x - 4, bird.y + flapY)
+    ctx!.lineTo(bird.x, bird.y)
+    ctx!.lineTo(bird.x + 4, bird.y + flapY)
+    ctx!.stroke()
   })
 }
 
 function drawSisyphusAndBoulder(width: number, height: number) {
   if (!ctx) return
 
-  const playerScreenX = width * 0.35
-  const playerWorldPosX = worldX
-  const playerY = getHillY(playerWorldPosX, height)
+  const boulderRadius = 26
 
-  // Boulder
+  // Calculate positions
   let boulderScreenX: number
-  let boulderY: number
-  const boulderRadius = 26 + hillAngle * 0.12
+  let playerScreenX: number
 
   if (gameState.value === 'rolling_back' || gameState.value === 'final_thought') {
-    boulderScreenX = getScreenX(boulderWorldX)
-    boulderY = getHillY(boulderWorldX, height) - boulderRadius - 3
+    boulderScreenX = worldDistance - worldScrollX
+    playerScreenX = -100 // Off screen
+  } else if (gameState.value === 'rolling_over') {
+    boulderScreenX = worldDistance - worldScrollX
+    // Sisyphus runs after but falls behind
+    const lag = Math.min(200, (worldDistance - PEAK_DISTANCE) * 1.5)
+    playerScreenX = boulderScreenX - 50 - lag
   } else {
-    boulderScreenX = playerScreenX + 38
-    boulderY = playerY - boulderRadius - 3
+    boulderScreenX = worldDistance - worldScrollX + 40
+    playerScreenX = worldDistance - worldScrollX
   }
+
+  const boulderY = getHillYAtScreenX(boulderScreenX, height) - boulderRadius - 3
+  const playerY = getHillYAtScreenX(playerScreenX, height)
 
   // Draw boulder
   ctx.save()
@@ -1262,43 +1087,35 @@ function drawSisyphusAndBoulder(width: number, height: number) {
   ctx.beginPath()
   ctx.arc(-boulderRadius * 0.25, -boulderRadius * 0.2, boulderRadius * 0.28, 0.5, 2.5)
   ctx.stroke()
-  ctx.beginPath()
-  ctx.arc(boulderRadius * 0.15, boulderRadius * 0.2, boulderRadius * 0.22, 1, 3.5)
-  ctx.stroke()
 
   ctx.restore()
 
-  // Don't draw Sisyphus during rollback/final thought
+  // Don't draw player during rollback
   if (gameState.value === 'rolling_back' || gameState.value === 'final_thought') return
+  if (playerScreenX < -50) return
 
-  // Sisyphus
-  if (sisyphusFlattened) {
+  // Flattened state
+  if (sisyphusFlattened && gameState.value === 'crushing') {
     ctx.strokeStyle = '#fff'
     ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(playerScreenX - 18, playerY)
     ctx.lineTo(playerScreenX + 18, playerY)
     ctx.stroke()
-    ctx.beginPath()
-    ctx.moveTo(playerScreenX - 4, playerY - 4)
-    ctx.lineTo(playerScreenX + 4, playerY + 4)
-    ctx.moveTo(playerScreenX + 4, playerY - 4)
-    ctx.lineTo(playerScreenX - 4, playerY + 4)
-    ctx.stroke()
     return
   }
 
-  const angleRad = hillAngle * Math.PI / 180
-  const lean = Math.min(32, hillAngle * 0.85 + armPhase * 18)
+  // Normal Sisyphus
+  const currentAngle = getAngleAtDistance(worldDistance)
+  const angleRad = currentAngle * Math.PI / 180
+  const lean = Math.min(32, currentAngle * 0.85 + armPhase * 18)
   const leanRad = lean * Math.PI / 180
 
   const bodyLength = 30
   const breathing = Math.sin(breathPhase) * 1.5
 
-  const footY = playerY
   const hipX = playerScreenX
-  const hipY = footY - 14
-
+  const hipY = playerY - 14
   const shoulderX = hipX + Math.sin(angleRad + leanRad) * bodyLength
   const shoulderY = hipY - Math.cos(angleRad + leanRad) * bodyLength + breathing
 
@@ -1311,19 +1128,14 @@ function drawSisyphusAndBoulder(width: number, height: number) {
 
   // Legs
   const legSpread = 10 + Math.abs(Math.sin(legPhase)) * 7
-
-  const backLegX = hipX - Math.cos(angleRad) * legSpread - Math.sin(legPhase) * 4
-  const backLegY = footY + Math.abs(Math.sin(legPhase + Math.PI)) * 2
   ctx.beginPath()
   ctx.moveTo(hipX, hipY)
-  ctx.lineTo(backLegX, backLegY)
+  ctx.lineTo(hipX - Math.cos(angleRad) * legSpread - Math.sin(legPhase) * 4, playerY)
   ctx.stroke()
 
-  const frontLegX = hipX + Math.cos(angleRad) * (legSpread * 0.5) + Math.sin(legPhase) * 4
-  const frontLegY = footY + Math.abs(Math.sin(legPhase)) * 2
   ctx.beginPath()
   ctx.moveTo(hipX, hipY)
-  ctx.lineTo(frontLegX, frontLegY)
+  ctx.lineTo(hipX + Math.cos(angleRad) * (legSpread * 0.5) + Math.sin(legPhase) * 4, playerY)
   ctx.stroke()
 
   // Torso
@@ -1333,78 +1145,34 @@ function drawSisyphusAndBoulder(width: number, height: number) {
   ctx.stroke()
 
   // Arms
-  const armPush = armPhase * 8
   const handX = boulderScreenX - boulderRadius + 4
   const handY = boulderY
 
   ctx.beginPath()
   ctx.moveTo(shoulderX, shoulderY - 2)
-  ctx.quadraticCurveTo(shoulderX + 10 + armPush * 0.4, shoulderY - 6, handX, handY - 4)
+  ctx.quadraticCurveTo(shoulderX + 10, shoulderY - 6, handX, handY - 4)
   ctx.stroke()
 
   ctx.beginPath()
   ctx.moveTo(shoulderX, shoulderY + 2)
-  ctx.quadraticCurveTo(shoulderX + 10 + armPush * 0.4, shoulderY + 4, handX, handY + 4)
+  ctx.quadraticCurveTo(shoulderX + 10, shoulderY + 4, handX, handY + 4)
   ctx.stroke()
 
   // Head
   ctx.beginPath()
   ctx.arc(headX, headY, headRadius, 0, Math.PI * 2)
   ctx.stroke()
-
-  // Swatting vulture
-  if (swattingVulture) {
-    ctx.beginPath()
-    ctx.moveTo(shoulderX, shoulderY - 8)
-    const swatAngle = Math.sin(gameTime * 16) * 0.5
-    ctx.lineTo(shoulderX - 18 * Math.cos(swatAngle), shoulderY - 28 - 8 * Math.sin(swatAngle))
-    ctx.stroke()
-
-    ctx.lineWidth = 1
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath()
-      ctx.moveTo(shoulderX - 12 + i * 6, shoulderY - 36 + Math.sin(gameTime * 18 + i) * 8)
-      ctx.lineTo(shoulderX - 16 + i * 6, shoulderY - 44 + Math.sin(gameTime * 18 + i) * 8)
-      ctx.stroke()
-    }
-  }
-
-  // Effort lines
-  if (pushPower > 1) {
-    ctx.lineWidth = 1
-    for (let i = 0; i < 3; i++) {
-      const offset = Math.sin(gameTime * 10 + i * 2) * 2
-      ctx.beginPath()
-      ctx.moveTo(headX - 12 + offset, headY - 6 + i * 5)
-      ctx.lineTo(headX - 18 + offset, headY - 6 + i * 5)
-      ctx.stroke()
-    }
-  }
-
-  // Sweat
-  sweatDrops.forEach(drop => {
-    ctx.fillStyle = '#88f'
-    ctx.beginPath()
-    ctx.arc(headX + drop.x - 4, headY + drop.y - 12, 1.5, 0, Math.PI * 2)
-    ctx.fill()
-  })
 }
 
 function drawThoughtBubble(width: number, height: number) {
   if (!ctx || !currentThought || gameState.value !== 'playing') return
 
-  const playerScreenX = width * 0.35
-  const playerY = getHillY(worldX, height)
+  const playerScreenX = worldDistance - worldScrollX
+  const playerY = getHillYAtScreenX(playerScreenX, height)
+  const headY = playerY - 50
 
-  // Head position (approximate)
-  const angleRad = hillAngle * Math.PI / 180
-  const leanRad = Math.min(32, hillAngle * 0.85) * Math.PI / 180
-  const headX = playerScreenX + Math.sin(angleRad + leanRad) * 36
-  const headY = playerY - 45
-
-  // Bubble position - above and to right of head
-  const bubbleX = headX + 30
-  const bubbleY = headY - 70
+  const bubbleX = playerScreenX + 50
+  const bubbleY = headY - 60
 
   const alpha = currentThought.timer < 0.5 ? currentThought.timer * 2 : currentThought.fadeIn
   ctx.globalAlpha = alpha
@@ -1412,17 +1180,14 @@ function drawThoughtBubble(width: number, height: number) {
   ctx.fillStyle = '#fff'
   ctx.strokeStyle = '#333'
   ctx.lineWidth = 2
-
-  // Measure text for bubble size
   ctx.font = '11px monospace'
-  const words = currentThought.text.split(' ')
-  const maxLineWidth = 200
-  let lines: string[] = []
-  let currentLine = ''
 
+  const words = currentThought.text.split(' ')
+  const lines: string[] = []
+  let currentLine = ''
   for (const word of words) {
     const testLine = currentLine + word + ' '
-    if (ctx.measureText(testLine).width > maxLineWidth && currentLine) {
+    if (ctx.measureText(testLine).width > 180 && currentLine) {
       lines.push(currentLine.trim())
       currentLine = word + ' '
     } else {
@@ -1431,37 +1196,22 @@ function drawThoughtBubble(width: number, height: number) {
   }
   lines.push(currentLine.trim())
 
-  const bubbleWidth = Math.min(220, Math.max(...lines.map(l => ctx!.measureText(l).width)) + 24)
+  const bubbleWidth = Math.min(200, Math.max(...lines.map(l => ctx!.measureText(l).width)) + 24)
   const bubbleHeight = lines.length * 15 + 18
 
-  // Rounded rectangle bubble
-  const radius = 12
+  // Bubble
   ctx.beginPath()
-  ctx.moveTo(bubbleX + radius, bubbleY)
-  ctx.lineTo(bubbleX + bubbleWidth - radius, bubbleY)
-  ctx.quadraticCurveTo(bubbleX + bubbleWidth, bubbleY, bubbleX + bubbleWidth, bubbleY + radius)
-  ctx.lineTo(bubbleX + bubbleWidth, bubbleY + bubbleHeight - radius)
-  ctx.quadraticCurveTo(bubbleX + bubbleWidth, bubbleY + bubbleHeight, bubbleX + bubbleWidth - radius, bubbleY + bubbleHeight)
-  ctx.lineTo(bubbleX + radius, bubbleY + bubbleHeight)
-  ctx.quadraticCurveTo(bubbleX, bubbleY + bubbleHeight, bubbleX, bubbleY + bubbleHeight - radius)
-  ctx.lineTo(bubbleX, bubbleY + radius)
-  ctx.quadraticCurveTo(bubbleX, bubbleY, bubbleX + radius, bubbleY)
+  ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, 12)
   ctx.fill()
   ctx.stroke()
 
-  // Thought dots leading to head
+  // Thought dots
   ctx.beginPath()
-  ctx.arc(bubbleX - 8, bubbleY + bubbleHeight + 12, 7, 0, Math.PI * 2)
+  ctx.arc(bubbleX - 5, bubbleY + bubbleHeight + 10, 6, 0, Math.PI * 2)
   ctx.fill()
   ctx.stroke()
-
   ctx.beginPath()
-  ctx.arc(bubbleX - 18, bubbleY + bubbleHeight + 25, 5, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.stroke()
-
-  ctx.beginPath()
-  ctx.arc(headX + 10, headY - 10, 3, 0, Math.PI * 2)
+  ctx.arc(bubbleX - 12, bubbleY + bubbleHeight + 22, 4, 0, Math.PI * 2)
   ctx.fill()
   ctx.stroke()
 
@@ -1477,11 +1227,8 @@ function drawThoughtBubble(width: number, height: number) {
 function drawFinalThought(width: number, height: number) {
   if (!ctx || gameState.value !== 'final_thought') return
 
-  const boulderScreenX = getScreenX(boulderWorldX)
-
-  // Thought bubble near the stopped boulder
-  const bubbleX = boulderScreenX + 50
-  const bubbleY = 150
+  const bubbleX = width / 2 - 100
+  const bubbleY = height / 2 - 50
 
   const alpha = Math.min(1, finalThoughtTimer * 2)
   ctx.globalAlpha = alpha
@@ -1489,63 +1236,18 @@ function drawFinalThought(width: number, height: number) {
   ctx.fillStyle = '#fff'
   ctx.strokeStyle = '#333'
   ctx.lineWidth = 2
-  ctx.font = '12px monospace'
+  ctx.font = '14px monospace'
 
-  const words = currentFinalThought.split(' ')
-  const maxLineWidth = 220
-  let lines: string[] = []
-  let currentLine = ''
-
-  for (const word of words) {
-    const testLine = currentLine + word + ' '
-    if (ctx.measureText(testLine).width > maxLineWidth && currentLine) {
-      lines.push(currentLine.trim())
-      currentLine = word + ' '
-    } else {
-      currentLine = testLine
-    }
-  }
-  lines.push(currentLine.trim())
-
-  const bubbleWidth = Math.min(240, Math.max(...lines.map(l => ctx!.measureText(l).width)) + 28)
-  const bubbleHeight = lines.length * 16 + 20
-
-  // Bubble
-  const radius = 14
   ctx.beginPath()
-  ctx.moveTo(bubbleX + radius, bubbleY)
-  ctx.lineTo(bubbleX + bubbleWidth - radius, bubbleY)
-  ctx.quadraticCurveTo(bubbleX + bubbleWidth, bubbleY, bubbleX + bubbleWidth, bubbleY + radius)
-  ctx.lineTo(bubbleX + bubbleWidth, bubbleY + bubbleHeight - radius)
-  ctx.quadraticCurveTo(bubbleX + bubbleWidth, bubbleY + bubbleHeight, bubbleX + bubbleWidth - radius, bubbleY + bubbleHeight)
-  ctx.lineTo(bubbleX + radius, bubbleY + bubbleHeight)
-  ctx.quadraticCurveTo(bubbleX, bubbleY + bubbleHeight, bubbleX, bubbleY + bubbleHeight - radius)
-  ctx.lineTo(bubbleX, bubbleY + radius)
-  ctx.quadraticCurveTo(bubbleX, bubbleY, bubbleX + radius, bubbleY)
+  ctx.roundRect(bubbleX, bubbleY, 250, 60, 12)
   ctx.fill()
   ctx.stroke()
 
-  // Dots to boulder
-  ctx.beginPath()
-  ctx.arc(bubbleX - 10, bubbleY + bubbleHeight + 15, 8, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.stroke()
-
-  ctx.beginPath()
-  ctx.arc(bubbleX - 25, bubbleY + bubbleHeight + 35, 5, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.stroke()
-
-  // Text
   ctx.fillStyle = '#000'
-  lines.forEach((line, i) => {
-    ctx!.fillText(line, bubbleX + 12, bubbleY + 18 + i * 16)
-  })
-
-  // "THE BOULDER" label
-  ctx.fillStyle = '#fff'
+  ctx.fillText(currentFinalThought, bubbleX + 15, bubbleY + 35)
+  ctx.fillStyle = '#666'
   ctx.font = '10px monospace'
-  ctx.fillText('- The Boulder', bubbleX + bubbleWidth - 85, bubbleY + bubbleHeight - 5)
+  ctx.fillText('- The Boulder', bubbleX + 150, bubbleY + 50)
 
   ctx.globalAlpha = 1
 }
@@ -1564,24 +1266,18 @@ onMounted(() => {
     resizeCanvas()
   }
 
-  // Check for auto-play mode (?auto in URL)
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search)
     autoPlayMode = params.has('auto')
     autoPlay.value = autoPlayMode
     if (autoPlayMode) {
-      console.log('🤖 Auto-play mode enabled. Sit back and watch!')
-      // Auto-start the game after a short delay
-      setTimeout(() => {
-        startGame()
-      }, 1000)
+      console.log('🤖 Auto-play mode enabled')
+      setTimeout(() => startGame(), 1000)
     }
   }
 
   window.addEventListener('keydown', handleKeyDown)
   window.addEventListener('resize', resizeCanvas)
-
-  loadCredits()
   fetchLeaderboard()
 })
 
@@ -1600,6 +1296,7 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
   cursor: pointer;
+  font-family: 'Courier New', monospace;
 }
 
 canvas {
@@ -1617,47 +1314,54 @@ canvas {
 }
 
 .intensity-meter { width: 200px; }
+.meter-label { color: #fff; font-size: 12px; margin-bottom: 5px; }
+.meter-bar { height: 20px; background: #333; border: 2px solid #fff; position: relative; }
+.meter-fill { height: 100%; transition: width 0.1s, background-color 0.3s; }
+.meter-threshold { position: absolute; left: 30%; top: 0; bottom: 0; width: 2px; background: #fff; opacity: 0.5; }
+.meter-hint { color: #888; font-size: 10px; margin-top: 5px; }
 
-.meter-label {
-  color: #fff;
-  font-size: 12px;
-  margin-bottom: 5px;
-}
-
-.meter-bar {
-  height: 20px;
-  background: #333;
-  border: 2px solid #fff;
-  position: relative;
-}
-
-.meter-fill {
-  height: 100%;
-  transition: width 0.1s, background-color 0.3s;
-}
-
-.meter-threshold {
-  position: absolute;
-  left: 30%;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: #fff;
-  opacity: 0.5;
-}
-
-.meter-hint {
-  color: #888;
-  font-size: 10px;
-  margin-top: 5px;
-}
-
-.score {
+.stats-panel {
   position: absolute;
   top: 0;
   right: 0;
-  color: #fff;
-  font-size: 24px;
+  text-align: right;
+}
+
+.score { color: #fff; font-size: 24px; }
+.level { color: #ffd700; font-size: 18px; margin-top: 5px; }
+
+.progress-bar {
+  position: absolute;
+  top: 70px;
+  left: 0;
+  width: 200px;
+}
+
+.progress-label { color: #888; font-size: 10px; margin-bottom: 3px; }
+.progress-track { height: 12px; background: #333; border: 1px solid #666; position: relative; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #4ade80, #ffd700); transition: width 0.2s; }
+.progress-marker { position: absolute; top: 0; bottom: 0; width: 1px; background: #666; }
+.progress-levels { display: flex; justify-content: space-between; font-size: 8px; color: #666; margin-top: 2px; }
+
+.level-announcement {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.level-text {
+  font-size: 48px;
+  color: #ffd700;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+  animation: levelPulse 0.5s ease-out;
+}
+
+@keyframes levelPulse {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .overlay {
@@ -1674,30 +1378,10 @@ canvas {
   color: #fff;
 }
 
-.start-screen h1 {
-  font-size: 72px;
-  margin-bottom: 20px;
-  letter-spacing: 20px;
-}
-
-.subtitle {
-  font-style: italic;
-  color: #888;
-  margin-bottom: 40px;
-}
-
-.instructions {
-  text-align: center;
-  line-height: 2;
-  margin-bottom: 40px;
-  color: #aaa;
-}
-
-.sound-note {
-  margin-top: 20px;
-  color: #666;
-  font-size: 12px;
-}
+.start-screen h1 { font-size: 72px; margin-bottom: 20px; letter-spacing: 20px; }
+.subtitle { font-style: italic; color: #888; margin-bottom: 40px; }
+.instructions { text-align: center; line-height: 2; margin-bottom: 40px; color: #aaa; }
+.sound-note { margin-top: 20px; color: #666; font-size: 12px; }
 
 .start-btn, .restart-btn, .submit-btn, .skip-btn {
   background: transparent;
@@ -1715,34 +1399,14 @@ canvas {
   color: #000;
 }
 
-.submit-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
+.submit-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-.game-over h1 {
-  font-size: 48px;
-  margin-bottom: 20px;
-}
+.game-over h1 { font-size: 48px; margin-bottom: 20px; }
+.final-score { font-size: 24px; margin-bottom: 10px; }
 
-.final-score {
-  font-size: 24px;
-  margin-bottom: 10px;
-}
-
-.initials-entry {
-  margin-bottom: 30px;
-  text-align: center;
-}
-
+.initials-entry { margin-bottom: 30px; text-align: center; }
 .initials-entry p { margin-bottom: 15px; }
-
-.initials-input {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  margin-bottom: 20px;
-}
+.initials-input { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
 
 .initial-box {
   width: 50px;
@@ -1756,118 +1420,43 @@ canvas {
   text-transform: uppercase;
 }
 
-.initial-box:focus {
-  outline: none;
-  border-color: #4ade80;
-}
+.initial-box:focus { outline: none; border-color: #4ade80; }
 
-.leaderboard {
-  margin: 30px 0;
-  text-align: center;
-}
-
-.leaderboard h2 {
-  font-size: 24px;
-  margin-bottom: 15px;
-}
-
-.leaderboard-entry {
-  display: flex;
-  gap: 20px;
-  justify-content: center;
-  margin: 5px 0;
-  font-size: 18px;
-}
-
+.leaderboard { margin: 30px 0; text-align: center; }
+.leaderboard h2 { font-size: 24px; margin-bottom: 15px; }
+.leaderboard-entry { display: flex; gap: 20px; justify-content: center; margin: 5px 0; font-size: 18px; }
 .rank { width: 30px; text-align: right; }
 .name { width: 50px; text-align: center; }
 .entry-score { width: 60px; text-align: left; }
 
-.leaderboard-note {
-  color: #666;
-  font-style: italic;
-  margin-top: 15px;
-  font-size: 12px;
-}
-
 .restart-btn { margin-top: 20px; }
 
-/* Credits styles */
-.credits-screen {
-  overflow: hidden;
-}
-
-.credits-scroll {
-  text-align: center;
-  transition: transform 0.1s linear;
-}
-
-.credits-scroll h1 {
-  font-size: 48px;
-  margin-bottom: 10px;
-}
-
-.credits-subtitle {
-  color: #666;
-  margin-bottom: 60px;
-}
-
-.credits-section {
-  margin: 40px 0;
-}
-
-.credits-section h2 {
-  font-size: 24px;
-  margin-bottom: 20px;
-  color: #888;
-}
+/* Credits */
+.credits-screen { overflow: hidden; }
+.credits-scroll { text-align: center; }
+.credits-scroll h1 { font-size: 48px; margin-bottom: 10px; }
+.credits-subtitle { color: #666; margin-bottom: 60px; }
+.credits-section { margin: 40px 0; }
+.credits-section h2 { font-size: 24px; margin-bottom: 20px; color: #888; }
 
 .credit-line {
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 10px;
   margin: 8px 0;
-  font-size: 16px;
+  font-size: 14px;
 }
 
-.credit-role {
-  text-align: right;
-  min-width: 150px;
-}
+.credit-role { text-align: right; min-width: 150px; color: #fff; }
+.credit-dots { color: #444; letter-spacing: 2px; }
+.credit-name { text-align: left; min-width: 200px; color: #aaa; }
 
-.credit-dots {
-  flex: 0 0 30px;
-  border-bottom: 1px dotted #666;
-  margin-bottom: 5px;
-}
-
-.credit-name {
-  text-align: left;
-  min-width: 200px;
-  color: #aaa;
-}
-
-.credits-quote {
-  font-style: italic;
-  color: #888;
-  max-width: 400px;
-  margin: 0 auto;
-}
-
-.credits-author {
-  color: #666;
-  margin-top: 10px;
-}
-
-.final-score-credits {
-  font-size: 20px;
-  margin-top: 40px;
-}
-
-.credits-note {
-  color: #666;
-  font-size: 12px;
-}
+.credits-quote { font-style: italic; color: #888; max-width: 400px; margin: 0 auto; }
+.credits-author { color: #666; margin-top: 10px; }
+.final-section { margin-top: 60px; }
+.final-score-credits { font-size: 20px; }
+.credits-note { color: #666; font-size: 12px; margin-top: 5px; }
 
 .skip-btn {
   position: absolute;
