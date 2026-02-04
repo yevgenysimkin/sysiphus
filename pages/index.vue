@@ -147,10 +147,24 @@ const finalScore = ref(0)
 const intensity = ref(50)
 const leaderboard = ref<{ initials: string; score: number }[]>([])
 
-// Level system - 6 levels with increasing angles
-const LEVEL_ANGLES = [10, 20, 30, 40, 50, 60] // degrees
-const LEVEL_DISTANCES = [0, 100, 220, 360, 520, 700] // world distance where each level starts
-const PEAK_DISTANCE = 900 // where the peak is
+// Level system - loaded from config
+import gameConfig from '~/game.config.json'
+
+// Build level arrays from config
+const LEVEL_ANGLES = gameConfig.levels.map(l => l.angle)
+const LEVEL_DISTANCES: number[] = []
+let runningDistance = 0
+for (const level of gameConfig.levels) {
+  LEVEL_DISTANCES.push(runningDistance)
+  runningDistance += level.width
+}
+const PEAK_DISTANCE = runningDistance // Total distance to peak
+
+// Physics constants from config
+const GRAVITY_MULT = gameConfig.physics.gravityMultiplier
+const PUSH_MULT = gameConfig.physics.pushMultiplier
+const SLIDE_MULT = gameConfig.physics.slideMultiplier
+const PUSH_DECAY = gameConfig.physics.pushDecay
 
 const currentLevel = ref(1)
 const displayLevel = ref(1)
@@ -272,7 +286,7 @@ interface Cloud { x: number; y: number; speed: number; size: number }
 
 let birds: Bird[] = []
 let clouds: Cloud[] = []
-let prometheusDistance = 350
+let prometheusDistance = gameConfig.prometheus.distance
 let prometheusGreeted = false
 let spaceshipX = -200
 let spaceshipY = 100
@@ -624,22 +638,22 @@ function updatePlaying(dt: number) {
   const now = Date.now()
   const timeSinceLastTap = (now - lastTapTime) / 1000
 
-  pushPower *= 0.93
+  pushPower *= PUSH_DECAY
 
   // Physics based on BOULDER position (not Sisyphus)
   const currentAngle = getAngleAtDistance(boulderDistance)
-  const requiredForce = Math.sin(currentAngle * Math.PI / 180) * 2.5
+  const requiredForce = Math.sin(currentAngle * Math.PI / 180) * GRAVITY_MULT
   const netForce = pushPower - requiredForce
 
   if (netForce > 0) {
-    const moveAmount = netForce * dt * 15
+    const moveAmount = netForce * dt * PUSH_MULT
     boulderDistance += moveAmount
     worldDistance = boulderDistance - 40 // Sisyphus stays behind the boulder
     score.value += netForce * dt * 10
     displayScore.value = score.value
   } else {
     // Boulder rolls back
-    boulderDistance += netForce * dt * 20
+    boulderDistance += netForce * dt * SLIDE_MULT
     boulderDistance = Math.max(0, boulderDistance)
     worldDistance = Math.max(0, boulderDistance - 40)
     if (Math.random() > 0.85) play8BitSound('slip')

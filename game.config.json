@@ -1,0 +1,19 @@
+{
+  "levels": [
+    { "angle": 10, "width": 5000 },
+    { "angle": 20, "width": 5000 },
+    { "angle": 30, "width": 5000 },
+    { "angle": 40, "width": 5000 },
+    { "angle": 50, "width": 5000 },
+    { "angle": 60, "width": 5000 }
+  ],
+  "physics": {
+    "gravityMultiplier": 2.5,
+    "pushMultiplier": 15,
+    "slideMultiplier": 20,
+    "pushDecay": 0.93
+  },
+  "prometheus": {
+    "distance": 3500
+  }
+}
