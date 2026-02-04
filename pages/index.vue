@@ -150,10 +150,13 @@ const leaderboard = ref<{ initials: string; score: number }[]>([])
 // Level system - loaded from config
 import gameConfig from '~/game.config.json'
 
-// Build level arrays from config
+// Flat start area before the hill begins
+const FLAT_START = gameConfig.flatStartWidth
+
+// Build level arrays from config (levels start AFTER the flat area)
 const LEVEL_ANGLES = gameConfig.levels.map(l => l.angle)
 const LEVEL_DISTANCES: number[] = []
-let runningDistance = 0
+let runningDistance = FLAT_START // Start after flat area
 for (const level of gameConfig.levels) {
   LEVEL_DISTANCES.push(runningDistance)
   runningDistance += level.width
@@ -165,6 +168,10 @@ const GRAVITY_MULT = gameConfig.physics.gravityMultiplier
 const PUSH_MULT = gameConfig.physics.pushMultiplier
 const SLIDE_MULT = gameConfig.physics.slideMultiplier
 const PUSH_DECAY = gameConfig.physics.pushDecay
+
+// Camera constants - Sisyphus stays at fixed screen position
+const PLAYER_SCREEN_X_RATIO = 1 / 3 // 1/3 from left edge
+const GROUND_SCREEN_Y_OFFSET = 100 // Ground is this far from bottom of screen
 
 const currentLevel = ref(1)
 const displayLevel = ref(1)
@@ -396,7 +403,9 @@ function resetGameState() {
   const startDist = (typeof window !== 'undefined' && (window as any).__sisyphusStartDistance) || 0
   boulderDistance = startDist
   worldDistance = Math.max(0, startDist - 40)
-  worldScrollX = Math.max(0, boulderDistance - 150)
+  // Camera scroll will be properly set in render loop based on canvas size
+  const initialScreenWidth = (typeof window !== 'undefined' ? window.innerWidth : 800)
+  worldScrollX = Math.max(0, boulderDistance - (initialScreenWidth * PLAYER_SCREEN_X_RATIO))
 
   // Set initial level based on start position
   if (startDist > 0) {
@@ -541,6 +550,9 @@ function registerTap() {
 }
 
 function getLevelAtDistance(dist: number): number {
+  // Flat start area is "level 0"
+  if (dist < FLAT_START) return 0
+
   for (let i = LEVEL_DISTANCES.length - 1; i >= 0; i--) {
     if (dist >= LEVEL_DISTANCES[i]) return i + 1
   }
@@ -548,9 +560,22 @@ function getLevelAtDistance(dist: number): number {
 }
 
 function getAngleAtDistance(dist: number): number {
+  // Flat start area - no angle
+  if (dist < FLAT_START) {
+    // Smooth transition into level 1
+    const transitionZone = 30
+    const distToLevel1 = FLAT_START - dist
+    if (distToLevel1 < transitionZone) {
+      const t = 1 - (distToLevel1 / transitionZone)
+      const smoothT = t * t * (3 - 2 * t)
+      return LEVEL_ANGLES[0] * smoothT
+    }
+    return 0
+  }
+
   const level = getLevelAtDistance(dist)
   const levelStart = LEVEL_DISTANCES[level - 1]
-  const levelEnd = level < 6 ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
+  const levelEnd = level < LEVEL_ANGLES.length ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
   const currentAngle = LEVEL_ANGLES[level - 1]
 
   // Smooth transition at level boundaries (first 30 units of each level)
@@ -563,6 +588,11 @@ function getAngleAtDistance(dist: number): number {
     // Ease-in-out smoothing
     const smoothT = t * t * (3 - 2 * t)
     return prevAngle + (currentAngle - prevAngle) * smoothT
+  } else if (level === 1 && distIntoLevel < transitionZone) {
+    // Transition from flat (0°) to level 1
+    const t = distIntoLevel / transitionZone
+    const smoothT = t * t * (3 - 2 * t)
+    return currentAngle * smoothT
   }
 
   return currentAngle
@@ -659,8 +689,10 @@ function updatePlaying(dt: number) {
     if (Math.random() > 0.85) play8BitSound('slip')
   }
 
-  // Update camera scroll - follow the boulder
-  worldScrollX = Math.max(0, boulderDistance - 150)
+  // Update camera scroll - keep boulder at fixed screen X position (1/3 from left)
+  const canvas = gameCanvas.value
+  const screenWidth = canvas?.width || 800
+  worldScrollX = Math.max(0, boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO))
 
   // Check level changes based on boulder position
   const newLevel = getLevelAtDistance(boulderDistance)
@@ -723,7 +755,9 @@ function updateRollingBack(dt: number) {
   displayLevel.value = getLevelAtDistance(boulderDistance)
 
   // Camera follows boulder
-  worldScrollX = Math.max(0, boulderDistance - 150)
+  const canvas = gameCanvas.value
+  const screenWidth = canvas?.width || 800
+  worldScrollX = Math.max(0, boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO))
 
   if (gameTime - lastRollSoundTime > 0.12) {
     play8BitSound('roll')
@@ -781,7 +815,9 @@ function updateRollingOver(dt: number) {
   displayLevel.value = getLevelAtDistance(effectiveDistance)
 
   // Camera follows boulder
-  worldScrollX = boulderDistance - 150
+  const canvas = gameCanvas.value
+  const screenWidth = canvas?.width || 800
+  worldScrollX = Math.max(0, boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO))
 
   if (gameTime - lastRollSoundTime > 0.1 && boulderVelocity > 5) {
     play8BitSound('roll')
@@ -873,49 +909,55 @@ function updateEnvironment(dt: number) {
   }
 }
 
-function getHillYAtScreenX(screenX: number, height: number): number {
-  const worldX = screenX + worldScrollX
-  const hillBaseY = height - 60
+// Calculate the raw world Y offset (height climbed) at a given world distance
+// This returns how much HIGHER the ground is compared to the starting flat area
+function getHeightAtWorldDistance(worldDist: number): number {
+  // Flat start area (before first level)
+  if (worldDist <= FLAT_START) {
+    return 0
+  }
 
-  if (worldX <= PEAK_DISTANCE) {
+  if (worldDist <= PEAK_DISTANCE) {
     // ASCENT SIDE: Calculate cumulative height through all levels
-    let y = hillBaseY
-    for (let level = 1; level <= 6; level++) {
-      const segmentStart = LEVEL_DISTANCES[level - 1]
-      const segmentEnd = level < 6 ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
-      const angle = LEVEL_ANGLES[level - 1]
+    let height = 0
+    for (let level = 0; level < LEVEL_ANGLES.length; level++) {
+      const segmentStart = LEVEL_DISTANCES[level]
+      const segmentEnd = level < LEVEL_ANGLES.length - 1 ? LEVEL_DISTANCES[level + 1] : PEAK_DISTANCE
+      const angle = LEVEL_ANGLES[level]
 
-      if (worldX >= segmentStart) {
-        const distInSegment = Math.min(worldX, segmentEnd) - segmentStart
-        y -= Math.tan(angle * Math.PI / 180) * distInSegment * 0.5
+      if (worldDist >= segmentStart) {
+        const distInSegment = Math.min(worldDist, segmentEnd) - segmentStart
+        height += Math.tan(angle * Math.PI / 180) * distInSegment
       }
     }
-    return y
+    return height
   } else {
     // DESCENT SIDE: Mirror the ascent
-    // Distance past peak mirrors back to ascent distance
-    const overPeak = worldX - PEAK_DISTANCE
-    const mirrorDist = PEAK_DISTANCE - overPeak // As if walking backwards on ascent
+    const overPeak = worldDist - PEAK_DISTANCE
+    const mirrorDist = PEAK_DISTANCE - overPeak
 
-    if (mirrorDist <= 0) {
-      // Past the symmetric point - flat ground at base level
-      return hillBaseY
+    if (mirrorDist <= FLAT_START) {
+      // Past the symmetric point - back to flat ground
+      return 0
     }
 
-    // Use same calculation as ascent, but for the mirror distance
-    let y = hillBaseY
-    for (let level = 1; level <= 6; level++) {
-      const segmentStart = LEVEL_DISTANCES[level - 1]
-      const segmentEnd = level < 6 ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
-      const angle = LEVEL_ANGLES[level - 1]
-
-      if (mirrorDist >= segmentStart) {
-        const distInSegment = Math.min(mirrorDist, segmentEnd) - segmentStart
-        y -= Math.tan(angle * Math.PI / 180) * distInSegment * 0.5
-      }
-    }
-    return y
+    return getHeightAtWorldDistance(mirrorDist)
   }
+}
+
+// Convert world distance to screen Y, accounting for camera following player
+function getHillYAtScreenX(screenX: number, height: number): number {
+  const worldX = screenX + worldScrollX
+  const worldHeight = getHeightAtWorldDistance(worldX)
+
+  // Camera Y offset: keep the ground at player's position at fixed screen Y
+  const playerWorldHeight = getHeightAtWorldDistance(boulderDistance)
+  const cameraYOffset = playerWorldHeight
+
+  // Ground Y = base - (worldHeight - cameraOffset)
+  // This keeps the player's ground position at a fixed screen Y
+  const baseY = height - GROUND_SCREEN_Y_OFFSET
+  return baseY - (worldHeight - cameraYOffset)
 }
 
 function render() {
