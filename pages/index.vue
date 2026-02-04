@@ -258,6 +258,8 @@ let boulderVelocity = 0
 let finalThoughtTimer = 0
 let currentFinalThought = ''
 let reachedPeak = false
+let sisyphusChasesAtPeak = false // Random: does he chase or fall?
+let sisyphusFallY = 0 // For falling animation
 
 // Thoughts
 let currentThought: { text: string; timer: number; fadeIn: number } | null = null
@@ -698,6 +700,9 @@ function startRollingOver() {
   reachedPeak = true
   boulderVelocity = 50
   finalScore.value = score.value
+  // Randomly decide: does Sisyphus chase or fall?
+  sisyphusChasesAtPeak = Math.random() > 0.5
+  sisyphusFallY = 0
 }
 
 function updateRollingOver(dt: number) {
@@ -1049,27 +1054,33 @@ function drawSisyphusAndBoulder(width: number, height: number) {
 
   const boulderRadius = 26
 
-  // Calculate positions
+  // Boulder is at worldDistance, Sisyphus is to its LEFT
   let boulderScreenX: number
-  let playerScreenX: number
+  let feetScreenX: number // Where Sisyphus's feet are planted
 
   if (gameState.value === 'rolling_back' || gameState.value === 'final_thought') {
     boulderScreenX = worldDistance - worldScrollX
-    playerScreenX = -100 // Off screen
+    feetScreenX = -100 // Off screen
   } else if (gameState.value === 'rolling_over') {
     boulderScreenX = worldDistance - worldScrollX
-    // Sisyphus runs after but falls behind
-    const lag = Math.min(200, (worldDistance - PEAK_DISTANCE) * 1.5)
-    playerScreenX = boulderScreenX - 50 - lag
+    if (sisyphusChasesAtPeak) {
+      // Chasing after the boulder but falling behind
+      const lag = Math.min(250, (worldDistance - PEAK_DISTANCE) * 2)
+      feetScreenX = boulderScreenX - 70 - lag
+    } else {
+      // Fell down at the peak - stays at peak position
+      feetScreenX = PEAK_DISTANCE - worldScrollX
+    }
   } else {
-    boulderScreenX = worldDistance - worldScrollX + 40
-    playerScreenX = worldDistance - worldScrollX
+    // Normal playing: boulder is ahead, Sisyphus pushes from behind (left)
+    boulderScreenX = worldDistance - worldScrollX + 50
+    feetScreenX = worldDistance - worldScrollX - 10 // Feet planted to the LEFT
   }
 
   const boulderY = getHillYAtScreenX(boulderScreenX, height) - boulderRadius - 3
-  const playerY = getHillYAtScreenX(playerScreenX, height)
+  const feetY = getHillYAtScreenX(feetScreenX, height)
 
-  // Draw boulder
+  // Draw boulder first
   ctx.save()
   ctx.translate(boulderScreenX, boulderY)
   ctx.rotate(boulderRotation)
@@ -1082,6 +1093,7 @@ function drawSisyphusAndBoulder(width: number, height: number) {
   ctx.fill()
   ctx.stroke()
 
+  // Boulder texture
   ctx.strokeStyle = '#6a6a6a'
   ctx.lineWidth = 1.5
   ctx.beginPath()
@@ -1092,76 +1104,155 @@ function drawSisyphusAndBoulder(width: number, height: number) {
 
   // Don't draw player during rollback
   if (gameState.value === 'rolling_back' || gameState.value === 'final_thought') return
-  if (playerScreenX < -50) return
+  if (feetScreenX < -50) return
 
-  // Flattened state
+  // Flattened state (crushed)
   if (sisyphusFlattened && gameState.value === 'crushing') {
     ctx.strokeStyle = '#fff'
     ctx.lineWidth = 2
     ctx.beginPath()
-    ctx.moveTo(playerScreenX - 18, playerY)
-    ctx.lineTo(playerScreenX + 18, playerY)
+    ctx.moveTo(feetScreenX - 18, feetY)
+    ctx.lineTo(feetScreenX + 18, feetY)
     ctx.stroke()
     return
   }
 
-  // Normal Sisyphus
+  // Fallen at peak (didn't chase)
+  if (gameState.value === 'rolling_over' && !sisyphusChasesAtPeak) {
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 2
+    // Draw collapsed/sitting figure at the peak
+    const sitY = feetY - 5
+    // Body slumped
+    ctx.beginPath()
+    ctx.moveTo(feetScreenX - 8, sitY)
+    ctx.lineTo(feetScreenX + 5, sitY - 15)
+    ctx.stroke()
+    // Head drooped
+    ctx.beginPath()
+    ctx.arc(feetScreenX + 8, sitY - 20, 6, 0, Math.PI * 2)
+    ctx.stroke()
+    // Legs out front
+    ctx.beginPath()
+    ctx.moveTo(feetScreenX - 8, sitY)
+    ctx.lineTo(feetScreenX + 15, sitY + 5)
+    ctx.stroke()
+    // Arm reaching toward boulder (defeated)
+    ctx.beginPath()
+    ctx.moveTo(feetScreenX + 5, sitY - 10)
+    ctx.lineTo(feetScreenX + 25, sitY - 5)
+    ctx.stroke()
+    return
+  }
+
+  // === SISYPHUS - Pushing from the LEFT ===
+  // He faces RIGHT, leaning into the boulder
+  // Arms animate independently (not glued to boulder)
+
   const currentAngle = getAngleAtDistance(worldDistance)
-  const angleRad = currentAngle * Math.PI / 180
-  const lean = Math.min(32, currentAngle * 0.85 + armPhase * 18)
-  const leanRad = lean * Math.PI / 180
 
-  const bodyLength = 30
-  const breathing = Math.sin(breathPhase) * 1.5
+  // Body leans forward based on effort
+  const leanAngle = 35 + (currentAngle * 0.3) // degrees leaning right
+  const leanRad = leanAngle * Math.PI / 180
 
-  const hipX = playerScreenX
-  const hipY = playerY - 14
-  const shoulderX = hipX + Math.sin(angleRad + leanRad) * bodyLength
-  const shoulderY = hipY - Math.cos(angleRad + leanRad) * bodyLength + breathing
-
-  const headRadius = 6
-  const headX = shoulderX + Math.sin(angleRad + leanRad) * (headRadius + 2)
-  const headY = shoulderY - Math.cos(angleRad + leanRad) * (headRadius + 2)
+  const bodyLength = 28
+  const breathing = Math.sin(breathPhase) * 1
 
   ctx.strokeStyle = '#ffffff'
   ctx.lineWidth = 2.5
 
-  // Legs
-  const legSpread = 10 + Math.abs(Math.sin(legPhase)) * 7
+  // FEET position - planted on the ground
+  const legCycle = Math.sin(legPhase)
+  const footBackX = feetScreenX - 10 - Math.abs(legCycle) * 8
+  const footFrontX = feetScreenX + 8 + Math.abs(Math.sin(legPhase + Math.PI)) * 6
+  const footY = feetY
+
+  // HIPS - above the feet
+  const hipX = feetScreenX
+  const hipY = feetY - 18
+
+  // SHOULDERS - leaning RIGHT toward the boulder
+  const shoulderX = hipX + Math.sin(leanRad) * bodyLength
+  const shoulderY = hipY - Math.cos(leanRad) * bodyLength + breathing
+
+  // HEAD - behind the shoulders (to the LEFT)
+  const headRadius = 6
+  const headX = shoulderX - 10
+  const headY = shoulderY - 4 + breathing
+
+  // ARM ANIMATION - independent pushing motion with bent elbows
+  const armPushCycle = Math.sin(gameTime * 6) * 0.3 + armPhase * 0.5 // Pumping motion
+  const armExtension = 18 + armPushCycle * 8 // How far arms extend
+
+  // Elbow position (bent arm)
+  const elbowOffsetX = 12
+  const elbowOffsetY = 4 + Math.sin(gameTime * 6) * 3
+  const elbowX = shoulderX + elbowOffsetX
+  const elbowY = shoulderY + elbowOffsetY
+
+  // Hand position (pushing forward, NOT attached to boulder)
+  const handX = shoulderX + armExtension
+  const handY = shoulderY + 2 + Math.sin(gameTime * 6 + 0.5) * 4
+
+  // Draw LEGS (from hips down to feet)
+  // Back leg - planted behind for leverage
   ctx.beginPath()
   ctx.moveTo(hipX, hipY)
-  ctx.lineTo(hipX - Math.cos(angleRad) * legSpread - Math.sin(legPhase) * 4, playerY)
+  ctx.lineTo(footBackX, footY)
   ctx.stroke()
 
+  // Front leg - stepping forward
   ctx.beginPath()
   ctx.moveTo(hipX, hipY)
-  ctx.lineTo(hipX + Math.cos(angleRad) * (legSpread * 0.5) + Math.sin(legPhase) * 4, playerY)
+  ctx.lineTo(footFrontX, footY)
   ctx.stroke()
 
-  // Torso
+  // Draw TORSO (from hips to shoulders, leaning right)
   ctx.beginPath()
   ctx.moveTo(hipX, hipY)
   ctx.lineTo(shoulderX, shoulderY)
   ctx.stroke()
 
-  // Arms
-  const handX = boulderScreenX - boulderRadius + 4
-  const handY = boulderY
-
+  // Draw ARMS with bent elbows (two arms, slight offset)
+  // Upper arm (shoulder to elbow)
   ctx.beginPath()
-  ctx.moveTo(shoulderX, shoulderY - 2)
-  ctx.quadraticCurveTo(shoulderX + 10, shoulderY - 6, handX, handY - 4)
+  ctx.moveTo(shoulderX, shoulderY - 3)
+  ctx.lineTo(elbowX, elbowY - 4)
   ctx.stroke()
 
   ctx.beginPath()
-  ctx.moveTo(shoulderX, shoulderY + 2)
-  ctx.quadraticCurveTo(shoulderX + 10, shoulderY + 4, handX, handY + 4)
+  ctx.moveTo(shoulderX, shoulderY + 3)
+  ctx.lineTo(elbowX, elbowY + 4)
   ctx.stroke()
 
-  // Head
+  // Forearm (elbow to hand)
+  ctx.beginPath()
+  ctx.moveTo(elbowX, elbowY - 4)
+  ctx.lineTo(handX, handY - 4)
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.moveTo(elbowX, elbowY + 4)
+  ctx.lineTo(handX, handY + 4)
+  ctx.stroke()
+
+  // Draw HEAD
   ctx.beginPath()
   ctx.arc(headX, headY, headRadius, 0, Math.PI * 2)
   ctx.stroke()
+
+  // Effort lines when pushing hard
+  if (pushPower > 1) {
+    ctx.lineWidth = 1
+    ctx.strokeStyle = '#fff'
+    for (let i = 0; i < 3; i++) {
+      const ox = Math.sin(gameTime * 10 + i) * 2
+      ctx.beginPath()
+      ctx.moveTo(headX - 10 + ox, headY - 5 + i * 4)
+      ctx.lineTo(headX - 16 + ox, headY - 5 + i * 4)
+      ctx.stroke()
+    }
+  }
 }
 
 function drawThoughtBubble(width: number, height: number) {
