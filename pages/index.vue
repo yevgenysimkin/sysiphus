@@ -291,12 +291,14 @@ let breathPhase = 0
 let crushTime = 0
 let sisyphusFlattened = false
 let boulderVelocity = 0
+let boulderBounce = 0 // Vertical bounce offset
 let finalThoughtTimer = 0
 let currentFinalThought = ''
 let reachedPeak = false
 let sisyphusTumbleRotation = 0 // Sisyphus tumbling down the hill
-let sisyphusTumbleX = 0 // Tumble position relative to boulder
+let sisyphusTumbleX = 0 // Position relative to boulder (negative = behind)
 let sisyphusFallen = false // Has he face-planted?
+let sisyphusRunning = true // Running vs tumbling
 
 // Rolling exclamations
 let currentBoulderExclamation = ''
@@ -466,6 +468,8 @@ function resetGameState() {
   sisyphusTumbleRotation = 0
   sisyphusTumbleX = 0
   sisyphusFallen = false
+  sisyphusRunning = true
+  boulderBounce = 0
   currentBoulderExclamation = ''
   boulderExclamationTimer = 0
   currentSisyphusExclamation = ''
@@ -860,48 +864,55 @@ function updateRollingBack(dt: number) {
 function startRollingOver() {
   gameState.value = 'rolling_over'
   reachedPeak = true
-  boulderVelocity = 50
+  boulderVelocity = 80 // Start fast - it's steep!
   finalScore.value = score.value
-  // Sisyphus tumbles after the boulder
+  // Sisyphus runs behind the boulder at first
   sisyphusTumbleRotation = 0
-  sisyphusTumbleX = -60 // Starts behind the boulder
+  sisyphusTumbleX = -70 // Fixed distance behind boulder
   sisyphusFallen = false
+  sisyphusRunning = true // He's running, not tumbling yet
   // Trigger first exclamation
   triggerBoulderExclamation()
-  triggerSisyphusExclamation()
 }
 
 function triggerBoulderExclamation() {
   currentBoulderExclamation = boulderExclamations[Math.floor(Math.random() * boulderExclamations.length)]
-  boulderExclamationTimer = 1.5 + Math.random()
+  boulderExclamationTimer = 8 + Math.random() * 4 // Every 8-12 seconds
 }
 
 function triggerSisyphusExclamation() {
   currentSisyphusExclamation = sisyphusExclamations[Math.floor(Math.random() * sisyphusExclamations.length)]
-  sisyphusExclamationTimer = 1.2 + Math.random() * 0.8
+  sisyphusExclamationTimer = 3 + Math.random() * 2
 }
 
 function updateRollingOver(dt: number) {
   const flatGroundDistance = PEAK_DISTANCE * 2
+  const halfwayDown = PEAK_DISTANCE + (PEAK_DISTANCE / 2)
 
-  // Accelerate downhill, decelerate on flat ground
+  // Accelerate downhill (it's steep!), decelerate on flat ground
   if (boulderDistance < flatGroundDistance) {
-    // Still on the descent - accelerate
-    boulderVelocity += 100 * dt
+    // Still on the descent - accelerate based on current angle
+    const effectiveDist = Math.max(0, PEAK_DISTANCE - (boulderDistance - PEAK_DISTANCE))
+    const currentAngle = getAngleAtDistance(effectiveDist)
+    boulderVelocity += Math.sin(currentAngle * Math.PI / 180) * 200 * dt
   } else {
     // On flat ground - apply friction to slow down
-    boulderVelocity *= 0.92
+    boulderVelocity *= 0.94
     // Sisyphus face-plants when boulder reaches flat ground
     if (!sisyphusFallen) {
       sisyphusFallen = true
+      sisyphusRunning = false
       triggerSisyphusExclamation()
     }
   }
 
   boulderDistance += boulderVelocity * dt * 0.1
 
+  // Boulder bounces as it rolls
+  boulderBounce = Math.abs(Math.sin(boulderRotation * 2)) * (boulderVelocity * 0.03)
+
   // Score descends proportionally - reaches 0 when boulder stops
-  const totalRollDistance = flatGroundDistance - PEAK_DISTANCE + 500 // Extra for flat ground roll
+  const totalRollDistance = flatGroundDistance - PEAK_DISTANCE + 500
   const distanceRolled = boulderDistance - PEAK_DISTANCE
   const scoreRatio = Math.max(0, 1 - (distanceRolled / totalRollDistance))
   displayScore.value = Math.floor(finalScore.value * scoreRatio)
@@ -922,19 +933,32 @@ function updateRollingOver(dt: number) {
 
   boulderRotation += boulderVelocity * dt * 0.02
 
-  // Sisyphus tumbles after the boulder
-  sisyphusTumbleRotation += boulderVelocity * dt * 0.04
-  sisyphusTumbleX += (boulderVelocity * dt * 0.08) - 2 // Falls behind gradually
+  // Sisyphus follows the boulder down
+  // He runs at first, then trips and tumbles partway down
+  if (sisyphusRunning) {
+    // Running behind the boulder - stays at fixed distance
+    sisyphusTumbleX = -70 // Fixed distance behind
+    // Trips and starts tumbling after halfway point
+    if (boulderDistance > halfwayDown && Math.random() < 0.02) {
+      sisyphusRunning = false
+      triggerSisyphusExclamation()
+    }
+  } else if (!sisyphusFallen) {
+    // Tumbling - rotates and bounces along
+    sisyphusTumbleRotation += boulderVelocity * dt * 0.05
+    // Stays roughly same distance behind (tumbling at same speed)
+    sisyphusTumbleX = -70 - Math.sin(sisyphusTumbleRotation) * 10
+  }
 
   // Update exclamation timers
   boulderExclamationTimer -= dt
   sisyphusExclamationTimer -= dt
 
-  // Trigger new exclamations periodically
-  if (boulderExclamationTimer <= 0 && boulderVelocity > 20) {
+  // Trigger new exclamations periodically (reduced frequency)
+  if (boulderExclamationTimer <= 0 && boulderVelocity > 30) {
     triggerBoulderExclamation()
   }
-  if (sisyphusExclamationTimer <= 0 && boulderVelocity > 10) {
+  if (sisyphusExclamationTimer <= 0 && boulderVelocity > 20 && !sisyphusRunning) {
     triggerSisyphusExclamation()
   }
 
@@ -1693,7 +1717,8 @@ function drawSisyphusAndBoulder(width: number, height: number) {
     feetScreenX = worldDistance - worldScrollX // Sisyphus at his tracked position
   }
 
-  const boulderY = getHillYAtScreenX(boulderScreenX, height) - boulderRadius - 3
+  const boulderBaseY = getHillYAtScreenX(boulderScreenX, height) - boulderRadius - 3
+  const boulderY = boulderBaseY - boulderBounce // Add bounce
   const feetY = getHillYAtScreenX(feetScreenX, height)
 
   // Draw boulder first
@@ -1733,43 +1758,84 @@ function drawSisyphusAndBoulder(width: number, height: number) {
     return
   }
 
-  // Tumbling down the hill after boulder
+  // Following boulder down the hill
   if (gameState.value === 'rolling_over') {
-    const tumbleY = getHillYAtScreenX(feetScreenX, height)
+    const groundY = getHillYAtScreenX(feetScreenX, height)
 
     if (sisyphusFallen) {
       // Face-planted on flat ground
       ctx.strokeStyle = '#fff'
       ctx.lineWidth = 2
-      // Body flat on ground
       ctx.beginPath()
-      ctx.moveTo(feetScreenX - 15, tumbleY - 5)
-      ctx.lineTo(feetScreenX + 20, tumbleY - 3)
+      ctx.moveTo(feetScreenX - 15, groundY - 5)
+      ctx.lineTo(feetScreenX + 20, groundY - 3)
       ctx.stroke()
-      // Head down
       ctx.beginPath()
-      ctx.arc(feetScreenX + 25, tumbleY - 5, 6, 0, Math.PI * 2)
+      ctx.arc(feetScreenX + 25, groundY - 5, 6, 0, Math.PI * 2)
       ctx.stroke()
-      // Arms splayed
       ctx.beginPath()
-      ctx.moveTo(feetScreenX, tumbleY - 5)
-      ctx.lineTo(feetScreenX - 10, tumbleY - 15)
-      ctx.moveTo(feetScreenX + 10, tumbleY - 4)
-      ctx.lineTo(feetScreenX + 15, tumbleY - 18)
+      ctx.moveTo(feetScreenX, groundY - 5)
+      ctx.lineTo(feetScreenX - 10, groundY - 15)
+      ctx.moveTo(feetScreenX + 10, groundY - 4)
+      ctx.lineTo(feetScreenX + 15, groundY - 18)
       ctx.stroke()
-      // Legs
       ctx.beginPath()
-      ctx.moveTo(feetScreenX - 15, tumbleY - 5)
-      ctx.lineTo(feetScreenX - 25, tumbleY - 2)
-      ctx.moveTo(feetScreenX - 15, tumbleY - 5)
-      ctx.lineTo(feetScreenX - 20, tumbleY + 5)
+      ctx.moveTo(feetScreenX - 15, groundY - 5)
+      ctx.lineTo(feetScreenX - 25, groundY - 2)
+      ctx.moveTo(feetScreenX - 15, groundY - 5)
+      ctx.lineTo(feetScreenX - 20, groundY + 5)
+      ctx.stroke()
+      return
+    }
+
+    if (sisyphusRunning) {
+      // Running behind the boulder - animated run cycle
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 2
+
+      const runCycle = gameTime * 15 // Fast run
+      const bounce = Math.abs(Math.sin(runCycle)) * 3
+
+      // Body leaning forward (running)
+      const bodyX = feetScreenX
+      const hipY = groundY - 18 - bounce
+      const shoulderY = hipY - 25
+      const shoulderX = bodyX + 10 // Leaning forward
+
+      // Torso
+      ctx.beginPath()
+      ctx.moveTo(bodyX, hipY)
+      ctx.lineTo(shoulderX, shoulderY)
+      ctx.stroke()
+
+      // Head
+      ctx.beginPath()
+      ctx.arc(shoulderX + 5, shoulderY - 8, 6, 0, Math.PI * 2)
+      ctx.stroke()
+
+      // Arms pumping
+      const armSwing = Math.sin(runCycle) * 0.6
+      ctx.beginPath()
+      ctx.moveTo(shoulderX, shoulderY)
+      ctx.lineTo(shoulderX - 10 + armSwing * 15, shoulderY + 15 - armSwing * 10)
+      ctx.moveTo(shoulderX, shoulderY)
+      ctx.lineTo(shoulderX + 15 - armSwing * 10, shoulderY + 10 + armSwing * 10)
+      ctx.stroke()
+
+      // Legs running
+      const legSwing = Math.sin(runCycle)
+      ctx.beginPath()
+      ctx.moveTo(bodyX, hipY)
+      ctx.lineTo(bodyX + legSwing * 15, groundY)
+      ctx.moveTo(bodyX, hipY)
+      ctx.lineTo(bodyX - legSwing * 15, groundY)
       ctx.stroke()
       return
     }
 
     // Tumbling animation - rotate the whole figure
     ctx.save()
-    ctx.translate(feetScreenX, tumbleY - 20)
+    ctx.translate(feetScreenX, groundY - 20)
     ctx.rotate(sisyphusTumbleRotation)
 
     ctx.strokeStyle = '#fff'
