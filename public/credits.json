@@ -1,0 +1,77 @@
+{
+  "cast": [
+    { "role": "Sisyphus", "actor": "Stick Figure" },
+    { "role": "The Boulder", "actor": "Stick Circle" },
+    { "role": "Bird #1", "actor": "Vladimir Putin" },
+    { "role": "Bird #2", "actor": "Also Vladimir Putin" },
+    { "role": "Bird #3", "actor": "Look - they're all VP, ok?" },
+    { "role": "Vulture", "actor": "Vladimir Putin (in a wig)" },
+    { "role": "Gravity", "actor": "E=MC²" },
+    { "role": "The Hill", "actor": "An Unreasonable Incline" },
+    { "role": "Prometheus", "actor": "That Other Guy" },
+    { "role": "The Moon", "actor": "Definitely Not Cheese" },
+    { "role": "UFO Pilot", "actor": "Classified" },
+    { "role": "Hope", "actor": "Not Appearing In This Game" },
+    { "role": "The Top of the Hill", "actor": "Also Not Appearing" },
+    { "role": "Zeus", "actor": "Executive Producer" }
+  ],
+  "crew": [
+    { "role": "Director", "name": "Albert Camus (posthumously)" },
+    { "role": "Physics Consultant", "name": "Sir Isaac Newton's Ghost" },
+    { "role": "Motivational Coach", "name": "Position Eliminated" },
+    { "role": "Catering", "name": "There Is No Catering" },
+    { "role": "Best Boy", "name": "There Is No Best Boy" },
+    { "role": "Existential Dread", "name": "Complimentary" }
+  ],
+  "thoughts": {
+    "normal": [
+      "Not much further... I think I can see the plateau",
+      "Wait, is it 'plateau' or 'plateu'? Or 'plato'?",
+      "What even is a hamburger? Why did I just think of that?",
+      "At least I'm getting a good workout",
+      "I wonder what Zeus is doing right now",
+      "This boulder seems heavier today",
+      "Maybe if I just... no, that won't work either",
+      "The view up here is quite nice actually",
+      "I should write a memoir: 'Rolling with the Punches'",
+      "One more push... just one more...",
+      "I've been saying 'one more push' for millennia",
+      "Is that Prometheus over there? Poor guy.",
+      "Cardio AND strength training. Very efficient.",
+      "I wonder if anyone is keeping score",
+      "This is fine. Everything is fine.",
+      "The ancient Greeks had no concept of 'weekend'",
+      "At least it's not raining... wait, can it rain here?",
+      "My Fitbit would be going crazy right now",
+      "What I wouldn't give for a water break",
+      "I bet Tantalus thinks he has it bad",
+      "I should really stretch before doing this",
+      "Left foot, right foot, left foot, right foot...",
+      "Is it just me or is this rock getting bigger?",
+      "I used to be a king, you know",
+      "Note to self: don't trick death gods"
+    ],
+    "desperate": [
+      "I don't know if I can go on much further...",
+      "My arms... they're giving out...",
+      "Is this how it ends? Again?",
+      "Please... just a little more strength...",
+      "I can feel it slipping...",
+      "No no no no no...",
+      "Not like this...",
+      "Everything is going dark...",
+      "Tell my boulder... I tried...",
+      "Why do I keep doing this to myself?"
+    ],
+    "final": [
+      "I had my doubts about that guy",
+      "What did I do to deserve this?",
+      "I was really hoping to see what's at the top... c'est la vie",
+      "Well, that's just typical",
+      "See you tomorrow, I guess",
+      "At least the view on the way down is nice",
+      "I'll get it next time. Probably.",
+      "The boulder wins again. Shocker."
+    ]
+  }
+}
