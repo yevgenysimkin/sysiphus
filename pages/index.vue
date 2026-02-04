@@ -157,9 +157,9 @@ const displayLevel = ref(1)
 const levelAnnouncement = ref('')
 let levelAnnouncementTimer = 0
 
-// Progress
+// Progress (based on boulder position)
 const progressPercent = computed(() => {
-  return Math.min(100, Math.max(0, (worldDistance / PEAK_DISTANCE) * 100))
+  return Math.min(100, Math.max(0, (boulderDistance / PEAK_DISTANCE) * 100))
 })
 
 const showGameUI = computed(() => {
@@ -237,7 +237,8 @@ const intensityColor = computed(() => {
 })
 
 // World state
-let worldDistance = 0 // How far along the hill (0 to PEAK_DISTANCE and beyond)
+let worldDistance = 0 // Sisyphus position (0 to PEAK_DISTANCE and beyond)
+let boulderDistance = 0 // Boulder position (tracked separately - can go over peak before Sisyphus)
 let worldScrollX = 0 // Camera scroll position
 let pushPower = 0
 let lastTapTime = 0
@@ -271,7 +272,8 @@ interface Cloud { x: number; y: number; speed: number; size: number }
 
 let birds: Bird[] = []
 let clouds: Cloud[] = []
-let prometheusDistance = 250
+let prometheusDistance = 350
+let prometheusGreeted = false
 let spaceshipX = -200
 let spaceshipY = 100
 let spaceshipActive = false
@@ -375,8 +377,21 @@ function resetGameState() {
   score.value = 0
   displayScore.value = 0
   intensity.value = 50
-  worldDistance = 0
-  worldScrollX = 0
+
+  // Check for startDistance override (for testing)
+  const startDist = (typeof window !== 'undefined' && (window as any).__sisyphusStartDistance) || 0
+  boulderDistance = startDist
+  worldDistance = Math.max(0, startDist - 40)
+  worldScrollX = Math.max(0, boulderDistance - 150)
+
+  // Set initial level based on start position
+  if (startDist > 0) {
+    currentLevel.value = getLevelAtDistance(startDist)
+    displayLevel.value = currentLevel.value
+    score.value = startDist * 5 // Approximate score for position
+    displayScore.value = score.value
+  }
+
   pushPower = 0
   lastTapTime = Date.now()
   tapTimes = []
@@ -396,6 +411,7 @@ function resetGameState() {
   lastThoughtTime = 0
   reachedPeak = false
   spaceshipActive = false
+  prometheusGreeted = false
 
   clouds = []
   for (let i = 0; i < 10; i++) {
@@ -519,7 +535,23 @@ function getLevelAtDistance(dist: number): number {
 
 function getAngleAtDistance(dist: number): number {
   const level = getLevelAtDistance(dist)
-  return LEVEL_ANGLES[level - 1]
+  const levelStart = LEVEL_DISTANCES[level - 1]
+  const levelEnd = level < 6 ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
+  const currentAngle = LEVEL_ANGLES[level - 1]
+
+  // Smooth transition at level boundaries (first 30 units of each level)
+  const transitionZone = 30
+  const distIntoLevel = dist - levelStart
+
+  if (level > 1 && distIntoLevel < transitionZone) {
+    const prevAngle = LEVEL_ANGLES[level - 2]
+    const t = distIntoLevel / transitionZone
+    // Ease-in-out smoothing
+    const smoothT = t * t * (3 - 2 * t)
+    return prevAngle + (currentAngle - prevAngle) * smoothT
+  }
+
+  return currentAngle
 }
 
 function maybeShowThought() {
@@ -594,26 +626,30 @@ function updatePlaying(dt: number) {
 
   pushPower *= 0.93
 
-  const currentAngle = getAngleAtDistance(worldDistance)
+  // Physics based on BOULDER position (not Sisyphus)
+  const currentAngle = getAngleAtDistance(boulderDistance)
   const requiredForce = Math.sin(currentAngle * Math.PI / 180) * 2.5
   const netForce = pushPower - requiredForce
 
   if (netForce > 0) {
     const moveAmount = netForce * dt * 15
-    worldDistance += moveAmount
+    boulderDistance += moveAmount
+    worldDistance = boulderDistance - 40 // Sisyphus stays behind the boulder
     score.value += netForce * dt * 10
     displayScore.value = score.value
   } else {
-    worldDistance += netForce * dt * 20
-    worldDistance = Math.max(0, worldDistance)
+    // Boulder rolls back
+    boulderDistance += netForce * dt * 20
+    boulderDistance = Math.max(0, boulderDistance)
+    worldDistance = Math.max(0, boulderDistance - 40)
     if (Math.random() > 0.85) play8BitSound('slip')
   }
 
-  // Update camera scroll
-  worldScrollX = Math.max(0, worldDistance - 150)
+  // Update camera scroll - follow the boulder
+  worldScrollX = Math.max(0, boulderDistance - 150)
 
-  // Check level changes
-  const newLevel = getLevelAtDistance(worldDistance)
+  // Check level changes based on boulder position
+  const newLevel = getLevelAtDistance(boulderDistance)
   if (newLevel !== currentLevel.value) {
     if (newLevel > currentLevel.value) {
       levelAnnouncement.value = `LEVEL ${newLevel}!`
@@ -628,14 +664,14 @@ function updatePlaying(dt: number) {
   const pushRatio = pushPower / (requiredForce + 0.2)
   intensity.value = Math.min(100, Math.max(0, pushRatio * 50))
 
-  // Check for failure
+  // Check for failure - boulder rolls back onto Sisyphus
   if (timeSinceLastTap > 1.2 && pushPower < 0.15) {
     startCrushing()
     return
   }
 
-  // Check for reaching peak
-  if (worldDistance >= PEAK_DISTANCE) {
+  // Check for BOULDER reaching peak (not Sisyphus!)
+  if (boulderDistance >= PEAK_DISTANCE) {
     startRollingOver()
     return
   }
@@ -663,17 +699,17 @@ function updateCrushing(dt: number) {
 
 function updateRollingBack(dt: number) {
   boulderVelocity += 150 * dt
-  worldDistance -= boulderVelocity * dt * 0.15
-  worldDistance = Math.max(0, worldDistance)
+  boulderDistance -= boulderVelocity * dt * 0.15
+  boulderDistance = Math.max(0, boulderDistance)
 
   // Score decreases as boulder rolls back!
-  displayScore.value = Math.max(0, score.value * (worldDistance / (finalScore.value / 10 + 1)))
+  displayScore.value = Math.max(0, score.value * (boulderDistance / (finalScore.value / 10 + 1)))
 
   // Update level display based on boulder position
-  displayLevel.value = getLevelAtDistance(worldDistance)
+  displayLevel.value = getLevelAtDistance(boulderDistance)
 
-  // Camera follows
-  worldScrollX = Math.max(0, worldDistance - 150)
+  // Camera follows boulder
+  worldScrollX = Math.max(0, boulderDistance - 150)
 
   if (gameTime - lastRollSoundTime > 0.12) {
     play8BitSound('roll')
@@ -682,8 +718,8 @@ function updateRollingBack(dt: number) {
 
   boulderRotation -= boulderVelocity * dt * 0.02
 
-  if (worldDistance <= 5) {
-    worldDistance = 0
+  if (boulderDistance <= 5) {
+    boulderDistance = 0
     boulderVelocity *= 0.7
     if (boulderVelocity < 20) {
       displayScore.value = 0
@@ -706,31 +742,42 @@ function startRollingOver() {
 }
 
 function updateRollingOver(dt: number) {
-  boulderVelocity += 100 * dt
-  worldDistance += boulderVelocity * dt * 0.1
+  const flatGroundDistance = PEAK_DISTANCE * 2
+
+  // Accelerate downhill, decelerate on flat ground
+  if (boulderDistance < flatGroundDistance) {
+    // Still on the descent - accelerate
+    boulderVelocity += 100 * dt
+  } else {
+    // On flat ground - apply friction to slow down
+    boulderVelocity *= 0.92 // Strong friction on flat ground
+  }
+
+  boulderDistance += boulderVelocity * dt * 0.1
 
   // Score stays the same when going over (you made it!)
   // But then resets as it rolls away
-  const overPeakDist = worldDistance - PEAK_DISTANCE
+  const overPeakDist = boulderDistance - PEAK_DISTANCE
   if (overPeakDist > 200) {
     displayScore.value = Math.max(0, finalScore.value * (1 - (overPeakDist - 200) / 300))
   }
 
-  // Level counts back down on other side
-  const effectiveDistance = Math.max(0, PEAK_DISTANCE - (worldDistance - PEAK_DISTANCE))
+  // Level counts back down on other side (symmetric hill)
+  const effectiveDistance = Math.max(0, PEAK_DISTANCE - (boulderDistance - PEAK_DISTANCE))
   displayLevel.value = getLevelAtDistance(effectiveDistance)
 
-  worldScrollX = worldDistance - 150
+  // Camera follows boulder
+  worldScrollX = boulderDistance - 150
 
-  if (gameTime - lastRollSoundTime > 0.1) {
+  if (gameTime - lastRollSoundTime > 0.1 && boulderVelocity > 5) {
     play8BitSound('roll')
     lastRollSoundTime = gameTime
   }
 
   boulderRotation += boulderVelocity * dt * 0.02
 
-  // Boulder rolls away
-  if (worldDistance > PEAK_DISTANCE + 600) {
+  // End game when boulder comes to rest on flat ground
+  if (boulderDistance > flatGroundDistance && boulderVelocity < 5) {
     displayScore.value = 0
     finalScore.value = 0
     gameState.value = 'final_thought'
@@ -816,29 +863,45 @@ function getHillYAtScreenX(screenX: number, height: number): number {
   const worldX = screenX + worldScrollX
   const hillBaseY = height - 60
 
-  // Find which segment we're in and calculate Y
-  let y = hillBaseY
-  let lastSegmentEnd = 0
+  if (worldX <= PEAK_DISTANCE) {
+    // ASCENT SIDE: Calculate cumulative height through all levels
+    let y = hillBaseY
+    for (let level = 1; level <= 6; level++) {
+      const segmentStart = LEVEL_DISTANCES[level - 1]
+      const segmentEnd = level < 6 ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
+      const angle = LEVEL_ANGLES[level - 1]
 
-  for (let level = 1; level <= 6; level++) {
-    const segmentStart = LEVEL_DISTANCES[level - 1]
-    const segmentEnd = level < 6 ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
-    const angle = LEVEL_ANGLES[level - 1]
-
-    if (worldX >= segmentStart) {
-      const distInSegment = Math.min(worldX, segmentEnd) - segmentStart
-      y -= Math.tan(angle * Math.PI / 180) * distInSegment * 0.5
-      lastSegmentEnd = segmentEnd
+      if (worldX >= segmentStart) {
+        const distInSegment = Math.min(worldX, segmentEnd) - segmentStart
+        y -= Math.tan(angle * Math.PI / 180) * distInSegment * 0.5
+      }
     }
-  }
-
-  // After peak, go back down
-  if (worldX > PEAK_DISTANCE) {
+    return y
+  } else {
+    // DESCENT SIDE: Mirror the ascent
+    // Distance past peak mirrors back to ascent distance
     const overPeak = worldX - PEAK_DISTANCE
-    y += Math.tan(45 * Math.PI / 180) * overPeak * 0.5
-  }
+    const mirrorDist = PEAK_DISTANCE - overPeak // As if walking backwards on ascent
 
-  return y
+    if (mirrorDist <= 0) {
+      // Past the symmetric point - flat ground at base level
+      return hillBaseY
+    }
+
+    // Use same calculation as ascent, but for the mirror distance
+    let y = hillBaseY
+    for (let level = 1; level <= 6; level++) {
+      const segmentStart = LEVEL_DISTANCES[level - 1]
+      const segmentEnd = level < 6 ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
+      const angle = LEVEL_ANGLES[level - 1]
+
+      if (mirrorDist >= segmentStart) {
+        const distInSegment = Math.min(mirrorDist, segmentEnd) - segmentStart
+        y -= Math.tan(angle * Math.PI / 180) * distInSegment * 0.5
+      }
+    }
+    return y
+  }
 }
 
 function render() {
@@ -918,16 +981,21 @@ function drawClouds(width: number) {
 function drawHill(width: number, height: number) {
   if (!ctx) return
 
+  // Draw hill extending off-screen to the right (peak is far away, not visible initially)
+  const peakScreenX = PEAK_DISTANCE - worldScrollX
+  // Always draw at least to edge of screen + buffer, peak only shows when close
+  const drawRightEdge = width + 100
+
   // Draw hill with distinct angle segments
   ctx.fillStyle = '#3d3d3d'
   ctx.beginPath()
   ctx.moveTo(0, getHillYAtScreenX(0, height))
 
-  for (let x = 0; x <= width + 20; x += 5) {
+  for (let x = 0; x <= drawRightEdge; x += 5) {
     ctx.lineTo(x, getHillYAtScreenX(x, height))
   }
 
-  ctx.lineTo(width + 20, height)
+  ctx.lineTo(drawRightEdge, height)
   ctx.lineTo(0, height)
   ctx.closePath()
   ctx.fill()
@@ -937,7 +1005,7 @@ function drawHill(width: number, height: number) {
   ctx.lineWidth = 3
   ctx.beginPath()
   ctx.moveTo(0, getHillYAtScreenX(0, height))
-  for (let x = 0; x <= width + 20; x += 5) {
+  for (let x = 0; x <= drawRightEdge; x += 5) {
     ctx.lineTo(x, getHillYAtScreenX(x, height))
   }
   ctx.stroke()
@@ -961,8 +1029,7 @@ function drawHill(width: number, height: number) {
     }
   }
 
-  // Peak marker
-  const peakScreenX = PEAK_DISTANCE - worldScrollX
+  // Peak marker (peakScreenX already calculated above)
   if (peakScreenX > 0 && peakScreenX < width) {
     ctx.fillStyle = '#ffd700'
     ctx.beginPath()
@@ -981,34 +1048,163 @@ function drawHill(width: number, height: number) {
 function drawPrometheus(width: number, height: number) {
   if (!ctx) return
   const screenX = prometheusDistance - worldScrollX
-  if (screenX < -50 || screenX > width + 100) return
+  if (screenX < -100 || screenX > width + 150) return
 
   const hillY = getHillYAtScreenX(screenX, height)
 
-  ctx.fillStyle = '#444'
-  ctx.beginPath()
-  ctx.ellipse(screenX, hillY - 15, 22, 18, 0, 0, Math.PI * 2)
-  ctx.fill()
+  // Prometheus is embedded deep IN the mountainside, chained to a rock
+  const embedX = screenX + 40 // Further into the mountain
+  const embedY = hillY + 25 // Deeper below surface
+  const scale = 1.5 // Larger figure
 
+  // Rock he's chained to (larger, jutting out of hillside)
+  ctx.fillStyle = '#555'
+  ctx.beginPath()
+  ctx.moveTo(embedX - 40 * scale, hillY)
+  ctx.lineTo(embedX + 30 * scale, hillY - 10)
+  ctx.lineTo(embedX + 40 * scale, embedY + 25 * scale)
+  ctx.lineTo(embedX - 30 * scale, embedY + 35 * scale)
+  ctx.closePath()
+  ctx.fill()
+  ctx.strokeStyle = '#777'
+  ctx.lineWidth = 1
+  ctx.stroke()
+
+  // Prometheus - arms stretched out, chained (scaled up)
+  ctx.strokeStyle = '#fff'
+  ctx.lineWidth = 2.5
+
+  // Head
+  ctx.beginPath()
+  ctx.arc(embedX, embedY - 12 * scale, 8 * scale, 0, Math.PI * 2)
+  ctx.stroke()
+
+  // Body (torso)
+  ctx.beginPath()
+  ctx.moveTo(embedX, embedY - 4 * scale)
+  ctx.lineTo(embedX, embedY + 22 * scale)
+  ctx.stroke()
+
+  // Arms stretched out and chained
+  ctx.beginPath()
+  ctx.moveTo(embedX - 25 * scale, embedY)
+  ctx.lineTo(embedX, embedY + 5 * scale)
+  ctx.lineTo(embedX + 25 * scale, embedY)
+  ctx.stroke()
+
+  // Chains (to rock)
+  ctx.strokeStyle = '#888'
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([3, 3])
+  ctx.beginPath()
+  ctx.moveTo(embedX - 25 * scale, embedY)
+  ctx.lineTo(embedX - 35 * scale, embedY - 15)
+  ctx.moveTo(embedX + 25 * scale, embedY)
+  ctx.lineTo(embedX + 35 * scale, embedY - 15)
+  ctx.stroke()
+  ctx.setLineDash([])
+
+  // Legs (dangling)
+  ctx.strokeStyle = '#fff'
+  ctx.lineWidth = 2.5
+  ctx.beginPath()
+  ctx.moveTo(embedX, embedY + 22 * scale)
+  ctx.lineTo(embedX - 8 * scale, embedY + 40 * scale)
+  ctx.moveTo(embedX, embedY + 22 * scale)
+  ctx.lineTo(embedX + 8 * scale, embedY + 40 * scale)
+  ctx.stroke()
+
+  // Blood rivulets running from belly
+  ctx.strokeStyle = '#8b0000'
+  ctx.lineWidth = 1.5
+  const bloodDrip = (gameTime * 20) % 30
+  for (let i = 0; i < 3; i++) {
+    const startY = embedY + 10 * scale + i * 5
+    const dripLength = 15 + Math.sin(gameTime * 2 + i) * 5
+    ctx.beginPath()
+    ctx.moveTo(embedX - 3 + i * 3, startY)
+    ctx.quadraticCurveTo(
+      embedX - 5 + i * 3 + Math.sin(gameTime + i) * 2,
+      startY + dripLength / 2,
+      embedX - 4 + i * 3,
+      startY + dripLength + (bloodDrip + i * 10) % 20
+    )
+    ctx.stroke()
+  }
+
+  // Vulture/eagle (eating his liver - the myth!) - larger
+  const vultureBob = Math.sin(gameTime * 3) * 3
   ctx.strokeStyle = '#fff'
   ctx.lineWidth = 2
+  // Body
   ctx.beginPath()
-  ctx.moveTo(screenX, hillY - 35)
-  ctx.lineTo(screenX, hillY - 12)
+  ctx.ellipse(embedX - 18 * scale, embedY + 14 * scale + vultureBob, 10 * scale, 6 * scale, -0.3, 0, Math.PI * 2)
+  ctx.stroke()
+  // Head pecking
+  ctx.beginPath()
+  ctx.arc(embedX - 6 * scale, embedY + 10 * scale + vultureBob, 5 * scale, 0, Math.PI * 2)
+  ctx.stroke()
+  // Beak (pecking at belly)
+  ctx.beginPath()
+  ctx.moveTo(embedX - 3 * scale, embedY + 10 * scale + vultureBob)
+  ctx.lineTo(embedX + 2, embedY + 12 * scale + vultureBob)
+  ctx.stroke()
+  // Wings
+  ctx.beginPath()
+  ctx.moveTo(embedX - 30 * scale, embedY + 6 * scale + vultureBob)
+  ctx.lineTo(embedX - 18 * scale, embedY + 14 * scale + vultureBob)
+  ctx.lineTo(embedX - 30 * scale, embedY + 22 * scale + vultureBob)
   ctx.stroke()
 
-  ctx.beginPath()
-  ctx.moveTo(screenX - 22, hillY - 30)
-  ctx.lineTo(screenX + 22, hillY - 30)
-  ctx.stroke()
+  // "ouch..." text - repeating
+  const ouchPhase = Math.floor(gameTime * 2) % 4
+  const ouchTexts = ['ouch...', 'ow...', 'ouch...', 'ugh...']
+  ctx.fillStyle = '#fff'
+  ctx.font = '11px monospace'
+  const ouchAlpha = 0.5 + Math.sin(gameTime * 4) * 0.3
+  ctx.globalAlpha = ouchAlpha
+  ctx.fillText(ouchTexts[ouchPhase], embedX - 45, embedY - 25 * scale)
+  ctx.globalAlpha = 1
 
-  ctx.beginPath()
-  ctx.arc(screenX, hillY - 42, 7, 0, Math.PI * 2)
-  ctx.stroke()
+  // Check if Sisyphus is passing by - show greeting
+  const sisyphusNearby = Math.abs(boulderDistance - prometheusDistance) < 80
+  if (sisyphusNearby && !prometheusGreeted && gameState.value === 'playing') {
+    prometheusGreeted = true
+  }
+
+  // Show greeting speech bubble when Sisyphus passes
+  if (prometheusGreeted && boulderDistance > prometheusDistance && boulderDistance < prometheusDistance + 200) {
+    ctx.fillStyle = '#fff'
+    ctx.strokeStyle = '#333'
+    ctx.lineWidth = 2
+
+    const bubbleX = embedX - 80
+    const bubbleY = embedY - 50 * scale
+    const bubbleW = 140
+    const bubbleH = 35
+
+    ctx.beginPath()
+    ctx.roundRect(bubbleX, bubbleY, bubbleW, bubbleH, 8)
+    ctx.fill()
+    ctx.stroke()
+
+    // Speech bubble tail
+    ctx.fillStyle = '#fff'
+    ctx.beginPath()
+    ctx.moveTo(bubbleX + 60, bubbleY + bubbleH)
+    ctx.lineTo(bubbleX + 70, bubbleY + bubbleH + 10)
+    ctx.lineTo(bubbleX + 80, bubbleY + bubbleH)
+    ctx.fill()
+
+    ctx.fillStyle = '#000'
+    ctx.font = '10px monospace'
+    ctx.fillText("Hey pal... hope you're", bubbleX + 8, bubbleY + 14)
+    ctx.fillText("taking care of yourself!", bubbleX + 8, bubbleY + 26)
+  }
 
   ctx.fillStyle = '#666'
-  ctx.font = '9px monospace'
-  ctx.fillText('Prometheus', screenX - 28, hillY + 15)
+  ctx.font = '10px monospace'
+  ctx.fillText('Prometheus', screenX + 10, hillY + 70)
 }
 
 function drawSpaceship() {
@@ -1054,27 +1250,27 @@ function drawSisyphusAndBoulder(width: number, height: number) {
 
   const boulderRadius = 26
 
-  // Boulder is at worldDistance, Sisyphus is to its LEFT
+  // Boulder and Sisyphus positions
   let boulderScreenX: number
   let feetScreenX: number // Where Sisyphus's feet are planted
 
   if (gameState.value === 'rolling_back' || gameState.value === 'final_thought') {
-    boulderScreenX = worldDistance - worldScrollX
+    boulderScreenX = boulderDistance - worldScrollX
     feetScreenX = -100 // Off screen
   } else if (gameState.value === 'rolling_over') {
-    boulderScreenX = worldDistance - worldScrollX
+    boulderScreenX = boulderDistance - worldScrollX
     if (sisyphusChasesAtPeak) {
       // Chasing after the boulder but falling behind
-      const lag = Math.min(250, (worldDistance - PEAK_DISTANCE) * 2)
+      const lag = Math.min(250, (boulderDistance - PEAK_DISTANCE) * 2)
       feetScreenX = boulderScreenX - 70 - lag
     } else {
       // Fell down at the peak - stays at peak position
       feetScreenX = PEAK_DISTANCE - worldScrollX
     }
   } else {
-    // Normal playing: boulder is ahead, Sisyphus pushes from behind (left)
-    boulderScreenX = worldDistance - worldScrollX + 50
-    feetScreenX = worldDistance - worldScrollX - 10 // Feet planted to the LEFT
+    // Normal playing: boulder position from boulderDistance, Sisyphus behind it
+    boulderScreenX = boulderDistance - worldScrollX
+    feetScreenX = worldDistance - worldScrollX // Sisyphus at his tracked position
   }
 
   const boulderY = getHillYAtScreenX(boulderScreenX, height) - boulderRadius - 3
@@ -1175,10 +1371,11 @@ function drawSisyphusAndBoulder(width: number, height: number) {
   const shoulderX = hipX + Math.sin(leanRad) * bodyLength
   const shoulderY = hipY - Math.cos(leanRad) * bodyLength + breathing
 
-  // HEAD - behind the shoulders (to the LEFT)
+  // HEAD - above the shoulders, tilted forward slightly toward boulder
   const headRadius = 6
-  const headX = shoulderX - 10
-  const headY = shoulderY - 4 + breathing
+  const headBob = Math.sin(legPhase * 0.5) * 1.5 // Subtle bob with walking
+  const headX = shoulderX + 2 + headBob // Slightly forward of shoulders
+  const headY = shoulderY - headRadius - 4 + breathing // Above shoulders
 
   // ARM ANIMATION - independent pushing motion with bent elbows
   const armPushCycle = Math.sin(gameTime * 6) * 0.3 + armPhase * 0.5 // Pumping motion
@@ -1258,7 +1455,7 @@ function drawSisyphusAndBoulder(width: number, height: number) {
 function drawThoughtBubble(width: number, height: number) {
   if (!ctx || !currentThought || gameState.value !== 'playing') return
 
-  const playerScreenX = worldDistance - worldScrollX
+  const playerScreenX = worldDistance - worldScrollX // Sisyphus position
   const playerY = getHillYAtScreenX(playerScreenX, height)
   const headY = playerY - 50
 
@@ -1361,6 +1558,18 @@ onMounted(() => {
     const params = new URLSearchParams(window.location.search)
     autoPlayMode = params.has('auto')
     autoPlay.value = autoPlayMode
+
+    // Check for startDistance param to skip ahead for testing
+    const startDistParam = params.get('startDistance')
+    if (startDistParam) {
+      const startDist = parseInt(startDistParam, 10)
+      if (!isNaN(startDist) && startDist > 0) {
+        console.log(`📍 Starting at distance: ${startDist}`)
+        // Will be applied when game starts
+        ;(window as any).__sisyphusStartDistance = startDist
+      }
+    }
+
     if (autoPlayMode) {
       console.log('🤖 Auto-play mode enabled')
       setTimeout(() => startGame(), 1000)
