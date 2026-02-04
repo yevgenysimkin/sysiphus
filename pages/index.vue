@@ -245,6 +245,20 @@ const finalThoughts = [
   "See you tomorrow, I guess"
 ]
 
+// Sisyphus exclamations when tumbling
+const sisyphusExclamations = [
+  "Gah!", "Blast!", "Not again!", "Oof!", "Curses!",
+  "Confound it!", "Drat!", "Oh bother!", "Here we go...",
+  "Why me?!", "Aaargh!", "Noooo!"
+]
+
+// Boulder exclamations when rolling free
+const boulderExclamations = [
+  "WOO HOO!", "Wheeee!", "Yippee!!", "FREEDOM!",
+  "Catch me if you can!", "Later, loser!", "So long, sucker!",
+  "Hahahaha!", "This is the life!", "Weeeee!", "I'm FREE!", "See ya!"
+]
+
 // Initials
 const initials = ref(['', '', ''])
 const initialInputs = ref<(HTMLInputElement | null)[]>([null, null, null])
@@ -280,8 +294,16 @@ let boulderVelocity = 0
 let finalThoughtTimer = 0
 let currentFinalThought = ''
 let reachedPeak = false
-let sisyphusChasesAtPeak = false // Random: does he chase or fall?
-let sisyphusFallY = 0 // For falling animation
+let sisyphusTumbleRotation = 0 // Sisyphus tumbling down the hill
+let sisyphusTumbleX = 0 // Tumble position relative to boulder
+let sisyphusFallen = false // Has he face-planted?
+
+// Rolling exclamations
+let currentBoulderExclamation = ''
+let boulderExclamationTimer = 0
+let currentSisyphusExclamation = ''
+let sisyphusExclamationTimer = 0
+let lastExclamationTime = 0
 
 // Thoughts
 let currentThought: { text: string; timer: number; fadeIn: number } | null = null
@@ -290,9 +312,15 @@ let lastThoughtTime = 0
 // Environment
 interface Bird { x: number; y: number; vx: number; vy: number; flapPhase: number }
 interface Cloud { x: number; y: number; speed: number; size: number }
+interface Tree { worldX: number; size: number; type: 'pine' | 'oak' | 'dead' }
+interface GrassTuft { worldX: number; height: number; blades: number }
+interface Landmark { worldX: number; type: 'souvlaki' | 'sign' | 'rock' | 'bench' }
 
 let birds: Bird[] = []
 let clouds: Cloud[] = []
+let trees: Tree[] = []
+let grass: GrassTuft[] = []
+let landmarks: Landmark[] = []
 let prometheusDistance = gameConfig.prometheus.distance
 let prometheusGreeted = false
 let spaceshipX = -200
@@ -435,6 +463,14 @@ function resetGameState() {
   reachedPeak = false
   spaceshipActive = false
   prometheusGreeted = false
+  sisyphusTumbleRotation = 0
+  sisyphusTumbleX = 0
+  sisyphusFallen = false
+  currentBoulderExclamation = ''
+  boulderExclamationTimer = 0
+  currentSisyphusExclamation = ''
+  sisyphusExclamationTimer = 0
+  lastExclamationTime = 0
 
   clouds = []
   for (let i = 0; i < 10; i++) {
@@ -445,6 +481,37 @@ function resetGameState() {
       size: 25 + Math.random() * 35
     })
   }
+
+  // Generate trees along the hill
+  trees = []
+  for (let i = 0; i < 200; i++) {
+    const worldX = Math.random() * PEAK_DISTANCE * 1.5
+    trees.push({
+      worldX,
+      size: 20 + Math.random() * 40,
+      type: Math.random() > 0.7 ? 'pine' : Math.random() > 0.5 ? 'oak' : 'dead'
+    })
+  }
+
+  // Generate grass tufts
+  grass = []
+  for (let i = 0; i < 500; i++) {
+    grass.push({
+      worldX: Math.random() * PEAK_DISTANCE * 2,
+      height: 5 + Math.random() * 10,
+      blades: 3 + Math.floor(Math.random() * 4)
+    })
+  }
+
+  // Place landmarks at specific distances
+  landmarks = [
+    { worldX: 2000, type: 'souvlaki' },
+    { worldX: 5000, type: 'sign' },
+    { worldX: 8000, type: 'bench' },
+    { worldX: 12000, type: 'rock' },
+    { worldX: 18000, type: 'sign' },
+    { worldX: 25000, type: 'souvlaki' },
+  ]
 
   birds = []
   for (let i = 0; i < 4; i++) {
@@ -732,6 +799,8 @@ function startCrushing() {
   finalScore.value = score.value
   play8BitSound('crush')
   boulderVelocity = 0
+  // Boulder starts gloating
+  triggerBoulderExclamation()
 }
 
 function updateCrushing(dt: number) {
@@ -740,6 +809,7 @@ function updateCrushing(dt: number) {
   if (crushTime > 1.2) {
     gameState.value = 'rolling_back'
     boulderVelocity = 30
+    triggerBoulderExclamation()
   }
 }
 
@@ -748,8 +818,10 @@ function updateRollingBack(dt: number) {
   boulderDistance -= boulderVelocity * dt * 0.15
   boulderDistance = Math.max(0, boulderDistance)
 
-  // Score decreases as boulder rolls back!
-  displayScore.value = Math.max(0, score.value * (boulderDistance / (finalScore.value / 10 + 1)))
+  // Score decreases proportionally - reaches 0 when boulder reaches bottom
+  const startDist = finalScore.value / 5 // Approximate start distance from score
+  const scoreRatio = boulderDistance / Math.max(startDist, 100)
+  displayScore.value = Math.max(0, Math.floor(finalScore.value * scoreRatio))
 
   // Update level display based on boulder position
   displayLevel.value = getLevelAtDistance(boulderDistance)
@@ -759,12 +831,18 @@ function updateRollingBack(dt: number) {
   const screenWidth = canvas?.width || 800
   worldScrollX = Math.max(0, boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO))
 
-  if (gameTime - lastRollSoundTime > 0.12) {
+  if (gameTime - lastRollSoundTime > 0.12 && boulderVelocity > 5) {
     play8BitSound('roll')
     lastRollSoundTime = gameTime
   }
 
   boulderRotation -= boulderVelocity * dt * 0.02
+
+  // Boulder exclamations while rolling
+  boulderExclamationTimer -= dt
+  if (boulderExclamationTimer <= 0 && boulderVelocity > 20) {
+    triggerBoulderExclamation()
+  }
 
   if (boulderDistance <= 5) {
     boulderDistance = 0
@@ -784,9 +862,23 @@ function startRollingOver() {
   reachedPeak = true
   boulderVelocity = 50
   finalScore.value = score.value
-  // Randomly decide: does Sisyphus chase or fall?
-  sisyphusChasesAtPeak = Math.random() > 0.5
-  sisyphusFallY = 0
+  // Sisyphus tumbles after the boulder
+  sisyphusTumbleRotation = 0
+  sisyphusTumbleX = -60 // Starts behind the boulder
+  sisyphusFallen = false
+  // Trigger first exclamation
+  triggerBoulderExclamation()
+  triggerSisyphusExclamation()
+}
+
+function triggerBoulderExclamation() {
+  currentBoulderExclamation = boulderExclamations[Math.floor(Math.random() * boulderExclamations.length)]
+  boulderExclamationTimer = 1.5 + Math.random()
+}
+
+function triggerSisyphusExclamation() {
+  currentSisyphusExclamation = sisyphusExclamations[Math.floor(Math.random() * sisyphusExclamations.length)]
+  sisyphusExclamationTimer = 1.2 + Math.random() * 0.8
 }
 
 function updateRollingOver(dt: number) {
@@ -798,17 +890,21 @@ function updateRollingOver(dt: number) {
     boulderVelocity += 100 * dt
   } else {
     // On flat ground - apply friction to slow down
-    boulderVelocity *= 0.92 // Strong friction on flat ground
+    boulderVelocity *= 0.92
+    // Sisyphus face-plants when boulder reaches flat ground
+    if (!sisyphusFallen) {
+      sisyphusFallen = true
+      triggerSisyphusExclamation()
+    }
   }
 
   boulderDistance += boulderVelocity * dt * 0.1
 
-  // Score stays the same when going over (you made it!)
-  // But then resets as it rolls away
-  const overPeakDist = boulderDistance - PEAK_DISTANCE
-  if (overPeakDist > 200) {
-    displayScore.value = Math.max(0, finalScore.value * (1 - (overPeakDist - 200) / 300))
-  }
+  // Score descends proportionally - reaches 0 when boulder stops
+  const totalRollDistance = flatGroundDistance - PEAK_DISTANCE + 500 // Extra for flat ground roll
+  const distanceRolled = boulderDistance - PEAK_DISTANCE
+  const scoreRatio = Math.max(0, 1 - (distanceRolled / totalRollDistance))
+  displayScore.value = Math.floor(finalScore.value * scoreRatio)
 
   // Level counts back down on other side (symmetric hill)
   const effectiveDistance = Math.max(0, PEAK_DISTANCE - (boulderDistance - PEAK_DISTANCE))
@@ -826,10 +922,25 @@ function updateRollingOver(dt: number) {
 
   boulderRotation += boulderVelocity * dt * 0.02
 
+  // Sisyphus tumbles after the boulder
+  sisyphusTumbleRotation += boulderVelocity * dt * 0.04
+  sisyphusTumbleX += (boulderVelocity * dt * 0.08) - 2 // Falls behind gradually
+
+  // Update exclamation timers
+  boulderExclamationTimer -= dt
+  sisyphusExclamationTimer -= dt
+
+  // Trigger new exclamations periodically
+  if (boulderExclamationTimer <= 0 && boulderVelocity > 20) {
+    triggerBoulderExclamation()
+  }
+  if (sisyphusExclamationTimer <= 0 && boulderVelocity > 10) {
+    triggerSisyphusExclamation()
+  }
+
   // End game when boulder comes to rest on flat ground
   if (boulderDistance > flatGroundDistance && boulderVelocity < 5) {
     displayScore.value = 0
-    finalScore.value = 0
     gameState.value = 'final_thought'
     currentFinalThought = "Well, there it goes..."
     finalThoughtTimer = 0
@@ -967,9 +1078,15 @@ function render() {
   const width = canvas.width
   const height = canvas.height
 
-  // Sky
+  // Calculate current altitude for parallax
+  const currentAltitude = getHeightAtWorldDistance(boulderDistance)
+
+  // Sky - changes color with altitude
   const skyGradient = ctx.createLinearGradient(0, 0, 0, height)
-  skyGradient.addColorStop(0, '#1a1a2e')
+  const altitudeRatio = Math.min(1, currentAltitude / 3000)
+  // Higher up = lighter sky, more stars visible
+  const skyTop = `rgb(${26 + altitudeRatio * 20}, ${26 + altitudeRatio * 30}, ${46 + altitudeRatio * 40})`
+  skyGradient.addColorStop(0, skyTop)
   skyGradient.addColorStop(0.5, '#1a1a4e')
   skyGradient.addColorStop(1, '#16213e')
   ctx.fillStyle = skyGradient
@@ -977,12 +1094,17 @@ function render() {
 
   drawStars(width, height)
   drawMoon(width, height)
+  drawParallaxBackground(width, height, currentAltitude)
   drawClouds(width)
+  drawTrees(width, height)
+  drawGrass(width, height)
+  drawLandmarks(width, height)
   drawHill(width, height)
   drawPrometheus(width, height)
   drawSpaceship()
   drawBirds()
   drawSisyphusAndBoulder(width, height)
+  drawExclamations(width, height)
   drawThoughtBubble(width, height)
   drawFinalThought(width, height)
 }
@@ -1019,6 +1141,254 @@ function drawMoon(width: number, height: number) {
   ctx.beginPath()
   ctx.arc(moonX, moonY, 30, 0, Math.PI * 2)
   ctx.fill()
+}
+
+function drawParallaxBackground(width: number, height: number, altitude: number) {
+  if (!ctx) return
+
+  // Layer 1: Distant mountains (visible at high altitude)
+  if (altitude > 1500) {
+    const mountainAlpha = Math.min(0.4, (altitude - 1500) / 3000)
+    ctx.fillStyle = `rgba(60, 60, 80, ${mountainAlpha})`
+    ctx.beginPath()
+    ctx.moveTo(0, height * 0.6)
+    for (let x = 0; x < width; x += 50) {
+      const peakHeight = Math.sin(x * 0.01 + worldScrollX * 0.0001) * 80 +
+                         Math.sin(x * 0.02) * 40
+      ctx.lineTo(x, height * 0.5 - peakHeight)
+    }
+    ctx.lineTo(width, height * 0.6)
+    ctx.closePath()
+    ctx.fill()
+  }
+
+  // Layer 2: Mid-distance hills (visible at medium altitude)
+  if (altitude > 500) {
+    const hillAlpha = Math.min(0.3, (altitude - 500) / 2000)
+    ctx.fillStyle = `rgba(40, 50, 40, ${hillAlpha})`
+    ctx.beginPath()
+    ctx.moveTo(0, height * 0.7)
+    for (let x = 0; x < width; x += 30) {
+      const hillHeight = Math.sin(x * 0.015 + worldScrollX * 0.0003) * 50 +
+                         Math.sin(x * 0.03) * 25
+      ctx.lineTo(x, height * 0.6 - hillHeight)
+    }
+    ctx.lineTo(width, height * 0.7)
+    ctx.closePath()
+    ctx.fill()
+  }
+
+  // Layer 3: Tree line silhouette (fades as we go above it)
+  const treeLineAlpha = Math.max(0, 0.25 - altitude / 4000)
+  if (treeLineAlpha > 0.02) {
+    ctx.fillStyle = `rgba(20, 40, 20, ${treeLineAlpha})`
+    ctx.beginPath()
+    ctx.moveTo(0, height * 0.8)
+    for (let x = 0; x < width; x += 15) {
+      const treeHeight = Math.sin(x * 0.05 + worldScrollX * 0.001) * 20 +
+                         Math.abs(Math.sin(x * 0.1)) * 15
+      ctx.lineTo(x, height * 0.75 - treeHeight)
+    }
+    ctx.lineTo(width, height * 0.8)
+    ctx.closePath()
+    ctx.fill()
+  }
+}
+
+function drawTrees(width: number, height: number) {
+  if (!ctx) return
+
+  trees.forEach(tree => {
+    const screenX = tree.worldX - worldScrollX
+    if (screenX < -50 || screenX > width + 50) return
+
+    const groundY = getHillYAtScreenX(screenX, height)
+    const size = tree.size
+
+    // Only draw trees that are below the current position (in the "background")
+    if (tree.worldX > boulderDistance + 200) return
+
+    ctx!.strokeStyle = '#3d2817'
+    ctx!.lineWidth = size * 0.15
+
+    if (tree.type === 'pine') {
+      // Trunk
+      ctx!.beginPath()
+      ctx!.moveTo(screenX, groundY)
+      ctx!.lineTo(screenX, groundY - size * 0.4)
+      ctx!.stroke()
+      // Triangular foliage
+      ctx!.fillStyle = '#1a3d1a'
+      ctx!.beginPath()
+      ctx!.moveTo(screenX, groundY - size)
+      ctx!.lineTo(screenX - size * 0.3, groundY - size * 0.3)
+      ctx!.lineTo(screenX + size * 0.3, groundY - size * 0.3)
+      ctx!.closePath()
+      ctx!.fill()
+    } else if (tree.type === 'oak') {
+      // Trunk
+      ctx!.beginPath()
+      ctx!.moveTo(screenX, groundY)
+      ctx!.lineTo(screenX, groundY - size * 0.5)
+      ctx!.stroke()
+      // Round foliage
+      ctx!.fillStyle = '#2d4a2d'
+      ctx!.beginPath()
+      ctx!.arc(screenX, groundY - size * 0.7, size * 0.35, 0, Math.PI * 2)
+      ctx!.fill()
+    } else {
+      // Dead tree
+      ctx!.strokeStyle = '#4a3a2a'
+      ctx!.beginPath()
+      ctx!.moveTo(screenX, groundY)
+      ctx!.lineTo(screenX, groundY - size * 0.8)
+      ctx!.lineTo(screenX - size * 0.2, groundY - size * 0.9)
+      ctx!.moveTo(screenX, groundY - size * 0.6)
+      ctx!.lineTo(screenX + size * 0.25, groundY - size * 0.75)
+      ctx!.stroke()
+    }
+  })
+}
+
+function drawGrass(width: number, height: number) {
+  if (!ctx) return
+  ctx.strokeStyle = '#3a5a3a'
+  ctx.lineWidth = 1
+
+  grass.forEach(tuft => {
+    const screenX = tuft.worldX - worldScrollX
+    if (screenX < -20 || screenX > width + 20) return
+
+    const groundY = getHillYAtScreenX(screenX, height)
+    const sway = Math.sin(gameTime * 2 + tuft.worldX * 0.1) * 2
+
+    for (let i = 0; i < tuft.blades; i++) {
+      const bladeX = screenX + (i - tuft.blades / 2) * 3
+      ctx!.beginPath()
+      ctx!.moveTo(bladeX, groundY)
+      ctx!.quadraticCurveTo(
+        bladeX + sway,
+        groundY - tuft.height * 0.6,
+        bladeX + sway * 1.5,
+        groundY - tuft.height
+      )
+      ctx!.stroke()
+    }
+  })
+}
+
+function drawLandmarks(width: number, height: number) {
+  if (!ctx) return
+
+  landmarks.forEach(landmark => {
+    const screenX = landmark.worldX - worldScrollX
+    if (screenX < -100 || screenX > width + 100) return
+
+    const groundY = getHillYAtScreenX(screenX, height)
+
+    if (landmark.type === 'souvlaki') {
+      // Souvlaki stand!
+      ctx!.fillStyle = '#8b4513'
+      ctx!.fillRect(screenX - 25, groundY - 50, 50, 50)
+      // Awning
+      ctx!.fillStyle = '#c41e3a'
+      ctx!.beginPath()
+      ctx!.moveTo(screenX - 35, groundY - 50)
+      ctx!.lineTo(screenX + 35, groundY - 50)
+      ctx!.lineTo(screenX + 30, groundY - 65)
+      ctx!.lineTo(screenX - 30, groundY - 65)
+      ctx!.closePath()
+      ctx!.fill()
+      // Sign
+      ctx!.fillStyle = '#fff'
+      ctx!.font = '8px monospace'
+      ctx!.fillText('SOUVLAKI', screenX - 22, groundY - 30)
+      ctx!.fillText('(closed)', screenX - 18, groundY - 20)
+    } else if (landmark.type === 'sign') {
+      // Wooden sign
+      ctx!.fillStyle = '#5c4033'
+      ctx!.fillRect(screenX - 2, groundY - 40, 4, 40)
+      ctx!.fillRect(screenX - 25, groundY - 50, 50, 20)
+      ctx!.fillStyle = '#fff'
+      ctx!.font = '7px monospace'
+      const signs = ['KEEP GOING', 'ALMOST THERE', 'NO REFUNDS', 'WHY?']
+      ctx!.fillText(signs[Math.floor(landmark.worldX / 5000) % signs.length], screenX - 20, groundY - 38)
+    } else if (landmark.type === 'bench') {
+      // Park bench
+      ctx!.fillStyle = '#654321'
+      ctx!.fillRect(screenX - 20, groundY - 15, 40, 5)
+      ctx!.fillRect(screenX - 18, groundY - 15, 3, 15)
+      ctx!.fillRect(screenX + 15, groundY - 15, 3, 15)
+      ctx!.fillRect(screenX - 20, groundY - 25, 40, 3)
+    } else if (landmark.type === 'rock') {
+      // Decorative rock
+      ctx!.fillStyle = '#5a5a5a'
+      ctx!.beginPath()
+      ctx!.ellipse(screenX, groundY - 10, 20, 12, 0, 0, Math.PI * 2)
+      ctx!.fill()
+      ctx!.fillStyle = '#4a4a4a'
+      ctx!.beginPath()
+      ctx!.ellipse(screenX - 5, groundY - 12, 8, 6, 0.3, 0, Math.PI * 2)
+      ctx!.fill()
+    }
+  })
+}
+
+function drawExclamations(width: number, height: number) {
+  if (!ctx) return
+
+  const boulderScreenX = boulderDistance - worldScrollX
+  const boulderY = getHillYAtScreenX(boulderScreenX, height) - 29
+
+  // Boulder exclamation
+  if (currentBoulderExclamation && boulderExclamationTimer > 0 &&
+      (gameState.value === 'rolling_back' || gameState.value === 'rolling_over' || gameState.value === 'crushing')) {
+    const alpha = Math.min(1, boulderExclamationTimer)
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = '#fff'
+    ctx.strokeStyle = '#333'
+    ctx.lineWidth = 2
+    ctx.font = 'bold 14px monospace'
+
+    const textWidth = ctx.measureText(currentBoulderExclamation).width
+    const bubbleX = boulderScreenX - textWidth / 2 - 8
+    const bubbleY = boulderY - 50
+
+    ctx.beginPath()
+    ctx.roundRect(bubbleX, bubbleY, textWidth + 16, 24, 8)
+    ctx.fill()
+    ctx.stroke()
+
+    ctx.fillStyle = '#000'
+    ctx.fillText(currentBoulderExclamation, bubbleX + 8, bubbleY + 17)
+    ctx.globalAlpha = 1
+  }
+
+  // Sisyphus exclamation (during rolling_over)
+  if (currentSisyphusExclamation && sisyphusExclamationTimer > 0 && gameState.value === 'rolling_over') {
+    const sisScreenX = boulderScreenX + sisyphusTumbleX
+    const sisY = getHillYAtScreenX(sisScreenX, height) - 30
+
+    const alpha = Math.min(1, sisyphusExclamationTimer)
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = '#fff'
+    ctx.strokeStyle = '#333'
+    ctx.lineWidth = 2
+    ctx.font = '12px monospace'
+
+    const textWidth = ctx.measureText(currentSisyphusExclamation).width
+    const bubbleX = sisScreenX - textWidth / 2 - 6
+    const bubbleY = sisY - 40
+
+    ctx.beginPath()
+    ctx.roundRect(bubbleX, bubbleY, textWidth + 12, 20, 6)
+    ctx.fill()
+    ctx.stroke()
+
+    ctx.fillStyle = '#000'
+    ctx.fillText(currentSisyphusExclamation, bubbleX + 6, bubbleY + 14)
+    ctx.globalAlpha = 1
+  }
 }
 
 function drawClouds(width: number) {
@@ -1315,14 +1685,8 @@ function drawSisyphusAndBoulder(width: number, height: number) {
     feetScreenX = -100 // Off screen
   } else if (gameState.value === 'rolling_over') {
     boulderScreenX = boulderDistance - worldScrollX
-    if (sisyphusChasesAtPeak) {
-      // Chasing after the boulder but falling behind
-      const lag = Math.min(250, (boulderDistance - PEAK_DISTANCE) * 2)
-      feetScreenX = boulderScreenX - 70 - lag
-    } else {
-      // Fell down at the peak - stays at peak position
-      feetScreenX = PEAK_DISTANCE - worldScrollX
-    }
+    // Sisyphus tumbles behind the boulder
+    feetScreenX = boulderScreenX + sisyphusTumbleX
   } else {
     // Normal playing: boulder position from boulderDistance, Sisyphus behind it
     boulderScreenX = boulderDistance - worldScrollX
@@ -1369,31 +1733,77 @@ function drawSisyphusAndBoulder(width: number, height: number) {
     return
   }
 
-  // Fallen at peak (didn't chase)
-  if (gameState.value === 'rolling_over' && !sisyphusChasesAtPeak) {
+  // Tumbling down the hill after boulder
+  if (gameState.value === 'rolling_over') {
+    const tumbleY = getHillYAtScreenX(feetScreenX, height)
+
+    if (sisyphusFallen) {
+      // Face-planted on flat ground
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 2
+      // Body flat on ground
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX - 15, tumbleY - 5)
+      ctx.lineTo(feetScreenX + 20, tumbleY - 3)
+      ctx.stroke()
+      // Head down
+      ctx.beginPath()
+      ctx.arc(feetScreenX + 25, tumbleY - 5, 6, 0, Math.PI * 2)
+      ctx.stroke()
+      // Arms splayed
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX, tumbleY - 5)
+      ctx.lineTo(feetScreenX - 10, tumbleY - 15)
+      ctx.moveTo(feetScreenX + 10, tumbleY - 4)
+      ctx.lineTo(feetScreenX + 15, tumbleY - 18)
+      ctx.stroke()
+      // Legs
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX - 15, tumbleY - 5)
+      ctx.lineTo(feetScreenX - 25, tumbleY - 2)
+      ctx.moveTo(feetScreenX - 15, tumbleY - 5)
+      ctx.lineTo(feetScreenX - 20, tumbleY + 5)
+      ctx.stroke()
+      return
+    }
+
+    // Tumbling animation - rotate the whole figure
+    ctx.save()
+    ctx.translate(feetScreenX, tumbleY - 20)
+    ctx.rotate(sisyphusTumbleRotation)
+
     ctx.strokeStyle = '#fff'
     ctx.lineWidth = 2
-    // Draw collapsed/sitting figure at the peak
-    const sitY = feetY - 5
-    // Body slumped
+
+    // Body (vertical line that rotates)
     ctx.beginPath()
-    ctx.moveTo(feetScreenX - 8, sitY)
-    ctx.lineTo(feetScreenX + 5, sitY - 15)
+    ctx.moveTo(0, 15)
+    ctx.lineTo(0, -10)
     ctx.stroke()
-    // Head drooped
+
+    // Head
     ctx.beginPath()
-    ctx.arc(feetScreenX + 8, sitY - 20, 6, 0, Math.PI * 2)
+    ctx.arc(0, -16, 6, 0, Math.PI * 2)
     ctx.stroke()
-    // Legs out front
+
+    // Arms flailing
+    const armFlail = Math.sin(sisyphusTumbleRotation * 3) * 0.5
     ctx.beginPath()
-    ctx.moveTo(feetScreenX - 8, sitY)
-    ctx.lineTo(feetScreenX + 15, sitY + 5)
+    ctx.moveTo(0, -5)
+    ctx.lineTo(-15 + armFlail * 10, -10 + armFlail * 5)
+    ctx.moveTo(0, -5)
+    ctx.lineTo(15 - armFlail * 10, 0 + armFlail * 5)
     ctx.stroke()
-    // Arm reaching toward boulder (defeated)
+
+    // Legs flailing
     ctx.beginPath()
-    ctx.moveTo(feetScreenX + 5, sitY - 10)
-    ctx.lineTo(feetScreenX + 25, sitY - 5)
+    ctx.moveTo(0, 15)
+    ctx.lineTo(-10 - armFlail * 8, 25)
+    ctx.moveTo(0, 15)
+    ctx.lineTo(10 + armFlail * 8, 28)
     ctx.stroke()
+
+    ctx.restore()
     return
   }
 
