@@ -151,7 +151,7 @@ let autoPlayMode = false
 let lastAutoTapTime = 0
 
 // Game state
-const gameState = ref<'start' | 'playing' | 'crushing' | 'rolling_back' | 'rolling_over' | 'continue_prompt' | 'getting_up' | 'final_thought' | 'credits' | 'gameover'>('start')
+const gameState = ref<'start' | 'playing' | 'countdown' | 'crushing' | 'rolling_back' | 'rolling_over' | 'continue_prompt' | 'getting_up' | 'final_thought' | 'credits' | 'gameover'>('start')
 const autoPlay = ref(false)
 const score = ref(0)
 const displayScore = ref(0)
@@ -198,7 +198,7 @@ const progressPercent = computed(() => {
 })
 
 const showGameUI = computed(() => {
-  return ['playing', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up'].includes(gameState.value)
+  return ['playing', 'countdown', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up'].includes(gameState.value)
 })
 
 // Credits data
@@ -328,6 +328,8 @@ let sisyphusTumbleRotation = 0 // Sisyphus tumbling down the hill
 let sisyphusTumbleX = 0 // Position relative to boulder (negative = behind)
 let sisyphusFallen = false // Has he face-planted?
 let sisyphusRunning = true // Running vs tumbling
+let sisyphusCrushWorldX = 0 // Where Sisyphus fell when crushed
+let boulderRollingForward = false // Boulder rolling forward over Sisyphus after crush
 
 // Rolling exclamations
 let currentBoulderExclamation = ''
@@ -498,6 +500,8 @@ function resetGameState() {
   sisyphusTumbleX = 0
   sisyphusFallen = false
   sisyphusRunning = true
+  sisyphusCrushWorldX = 0
+  boulderRollingForward = false
   boulderBounce = 0
   currentBoulderExclamation = ''
   boulderExclamationTimer = 0
@@ -836,6 +840,8 @@ function startCrushing() {
   finalScore.value = score.value
   play8BitSound('crush')
   boulderVelocity = 0
+  boulderRollingForward = false
+  sisyphusCrushWorldX = worldDistance // Remember where Sisyphus fell
   // Boulder starts gloating
   triggerBoulderExclamation()
 }
@@ -843,6 +849,23 @@ function startCrushing() {
 function updateCrushing(dt: number) {
   crushTime += dt
   if (crushTime > 0.4) sisyphusFlattened = true
+
+  // After flattening, boulder rolls forward ~80px over Sisyphus
+  if (crushTime > 0.4 && crushTime <= 1.2) {
+    if (!boulderRollingForward) {
+      boulderRollingForward = true
+    }
+    // Roll forward over Sisyphus
+    const forwardSpeed = 100 // px/s
+    boulderDistance += forwardSpeed * dt
+    boulderRotation += forwardSpeed * dt * 0.02
+
+    // Update camera to follow boulder
+    const canvas = gameCanvas.value
+    const screenWidth = canvas?.width || 800
+    worldScrollX = Math.max(0, boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO))
+  }
+
   if (crushTime > 1.2) {
     gameState.value = 'rolling_back'
     boulderVelocity = 30
@@ -1444,6 +1467,129 @@ function drawLandmarks(width: number, height: number) {
   })
 }
 
+// Unified speech/thought bubble system
+interface BubbleOptions {
+  alpha?: number
+  font?: string
+  maxWidth?: number
+  offsetX?: number
+  offsetY?: number
+}
+
+function drawBubble(
+  speakerX: number,
+  speakerY: number,
+  text: string,
+  type: 'speech' | 'thought',
+  options?: BubbleOptions
+) {
+  if (!ctx) return
+  const canvas = gameCanvas.value
+  if (!canvas) return
+
+  const alpha = options?.alpha ?? 1
+  const font = options?.font ?? '11px monospace'
+  const maxWidth = options?.maxWidth ?? 180
+  const offsetX = options?.offsetX ?? 20
+  const offsetY = options?.offsetY ?? -20
+
+  ctx.save()
+  ctx.globalAlpha = alpha
+  ctx.font = font
+
+  // Word-wrap text
+  const words = text.split(' ')
+  const lines: string[] = []
+  let currentLine = ''
+  for (const word of words) {
+    const testLine = currentLine + word + ' '
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+      lines.push(currentLine.trim())
+      currentLine = word + ' '
+    } else {
+      currentLine = testLine
+    }
+  }
+  lines.push(currentLine.trim())
+
+  const lineHeight = parseInt(font) + 4
+  const padding = 10
+  const bubbleWidth = Math.min(maxWidth + 24, Math.max(...lines.map(l => ctx!.measureText(l).width)) + padding * 2 + 4)
+  const bubbleHeight = lines.length * lineHeight + padding * 2
+
+  // Position bubble northeast of speaker
+  let bubbleX = speakerX + offsetX
+  let bubbleY = speakerY + offsetY - bubbleHeight
+
+  // Clamp to screen edges
+  if (bubbleX + bubbleWidth > canvas.width - 5) {
+    bubbleX = canvas.width - bubbleWidth - 5
+  }
+  if (bubbleX < 5) bubbleX = 5
+  if (bubbleY < 5) bubbleY = 5
+  if (bubbleY + bubbleHeight > canvas.height - 5) {
+    bubbleY = canvas.height - bubbleHeight - 5
+  }
+
+  // Draw bubble background
+  ctx.fillStyle = '#fff'
+  ctx.strokeStyle = '#333'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, type === 'thought' ? 12 : 8)
+  ctx.fill()
+  ctx.stroke()
+
+  if (type === 'speech') {
+    // Pointed tail toward speaker
+    const tailBaseX = Math.max(bubbleX + 10, Math.min(bubbleX + bubbleWidth - 10, speakerX + offsetX))
+    const tailBaseY = bubbleY + bubbleHeight
+    ctx.fillStyle = '#fff'
+    ctx.beginPath()
+    ctx.moveTo(tailBaseX - 6, tailBaseY - 1)
+    ctx.lineTo(speakerX + 5, speakerY - 5)
+    ctx.lineTo(tailBaseX + 6, tailBaseY - 1)
+    ctx.fill()
+    // Redraw just the tail outline edges (not the base)
+    ctx.strokeStyle = '#333'
+    ctx.beginPath()
+    ctx.moveTo(tailBaseX - 6, tailBaseY)
+    ctx.lineTo(speakerX + 5, speakerY - 5)
+    ctx.lineTo(tailBaseX + 6, tailBaseY)
+    ctx.stroke()
+  } else {
+    // Cloud dots for thought bubble - from bubble bottom-left toward speaker
+    const dotStartX = bubbleX + 5
+    const dotStartY = bubbleY + bubbleHeight + 5
+    const dx = speakerX - dotStartX
+    const dy = speakerY - dotStartY
+    const dist = Math.sqrt(dx * dx + dy * dy)
+    const ux = dx / (dist || 1)
+    const uy = dy / (dist || 1)
+
+    ctx.fillStyle = '#fff'
+    ctx.strokeStyle = '#333'
+    // Large dot
+    ctx.beginPath()
+    ctx.arc(dotStartX + ux * 10, dotStartY + uy * 10, 5, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    // Small dot
+    ctx.beginPath()
+    ctx.arc(dotStartX + ux * 22, dotStartY + uy * 22, 3, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  // Draw text
+  ctx.fillStyle = '#000'
+  lines.forEach((line, i) => {
+    ctx!.fillText(line, bubbleX + padding, bubbleY + padding + lineHeight * (i + 0.8))
+  })
+
+  ctx.restore()
+}
+
 function drawExclamations(width: number, height: number) {
   if (!ctx) return
 
@@ -1454,50 +1600,19 @@ function drawExclamations(width: number, height: number) {
   if (currentBoulderExclamation && boulderExclamationTimer > 0 &&
       (gameState.value === 'rolling_back' || gameState.value === 'rolling_over' || gameState.value === 'crushing')) {
     const alpha = Math.min(1, boulderExclamationTimer)
-    ctx.globalAlpha = alpha
-    ctx.fillStyle = '#fff'
-    ctx.strokeStyle = '#333'
-    ctx.lineWidth = 2
-    ctx.font = 'bold 14px monospace'
-
-    const textWidth = ctx.measureText(currentBoulderExclamation).width
-    const bubbleX = boulderScreenX - textWidth / 2 - 8
-    const bubbleY = boulderY - 50
-
-    ctx.beginPath()
-    ctx.roundRect(bubbleX, bubbleY, textWidth + 16, 24, 8)
-    ctx.fill()
-    ctx.stroke()
-
-    ctx.fillStyle = '#000'
-    ctx.fillText(currentBoulderExclamation, bubbleX + 8, bubbleY + 17)
-    ctx.globalAlpha = 1
+    drawBubble(boulderScreenX, boulderY, currentBoulderExclamation, 'speech', {
+      alpha, font: 'bold 14px monospace', offsetX: -10, offsetY: -50
+    })
   }
 
   // Sisyphus exclamation (during rolling_over)
   if (currentSisyphusExclamation && sisyphusExclamationTimer > 0 && gameState.value === 'rolling_over') {
     const sisScreenX = boulderScreenX + sisyphusTumbleX
     const sisY = getHillYAtScreenX(sisScreenX, height) - 30
-
     const alpha = Math.min(1, sisyphusExclamationTimer)
-    ctx.globalAlpha = alpha
-    ctx.fillStyle = '#fff'
-    ctx.strokeStyle = '#333'
-    ctx.lineWidth = 2
-    ctx.font = '12px monospace'
-
-    const textWidth = ctx.measureText(currentSisyphusExclamation).width
-    const bubbleX = sisScreenX - textWidth / 2 - 6
-    const bubbleY = sisY - 40
-
-    ctx.beginPath()
-    ctx.roundRect(bubbleX, bubbleY, textWidth + 12, 20, 6)
-    ctx.fill()
-    ctx.stroke()
-
-    ctx.fillStyle = '#000'
-    ctx.fillText(currentSisyphusExclamation, bubbleX + 6, bubbleY + 14)
-    ctx.globalAlpha = 1
+    drawBubble(sisScreenX, sisY, currentSisyphusExclamation, 'speech', {
+      alpha, font: '12px monospace', offsetX: -10, offsetY: -40
+    })
   }
 }
 
@@ -1710,32 +1825,9 @@ function drawPrometheus(width: number, height: number) {
 
   // Show greeting speech bubble when Sisyphus passes
   if (prometheusGreeted && boulderDistance > prometheusDistance && boulderDistance < prometheusDistance + 200) {
-    ctx.fillStyle = '#fff'
-    ctx.strokeStyle = '#333'
-    ctx.lineWidth = 2
-
-    const bubbleX = embedX - 80
-    const bubbleY = embedY - 50 * scale
-    const bubbleW = 140
-    const bubbleH = 35
-
-    ctx.beginPath()
-    ctx.roundRect(bubbleX, bubbleY, bubbleW, bubbleH, 8)
-    ctx.fill()
-    ctx.stroke()
-
-    // Speech bubble tail
-    ctx.fillStyle = '#fff'
-    ctx.beginPath()
-    ctx.moveTo(bubbleX + 60, bubbleY + bubbleH)
-    ctx.lineTo(bubbleX + 70, bubbleY + bubbleH + 10)
-    ctx.lineTo(bubbleX + 80, bubbleY + bubbleH)
-    ctx.fill()
-
-    ctx.fillStyle = '#000'
-    ctx.font = '10px monospace'
-    ctx.fillText("Hey pal... hope you're", bubbleX + 8, bubbleY + 14)
-    ctx.fillText("taking care of yourself!", bubbleX + 8, bubbleY + 26)
+    drawBubble(embedX, embedY - 15 * scale, "Hey pal... hope you're taking care of yourself!", 'speech', {
+      font: '10px monospace', maxWidth: 140, offsetX: -60, offsetY: -40
+    })
   }
 
   ctx.fillStyle = '#666'
@@ -1847,17 +1939,74 @@ function drawSisyphusAndBoulder(width: number, height: number) {
 
   ctx.restore()
 
-  // Don't draw player during rollback
-  if (gameState.value === 'rolling_back' || gameState.value === 'final_thought') return
+  // During rollback, draw Sisyphus lying flat at crush position until camera scrolls past
+  if (gameState.value === 'rolling_back') {
+    const crushScreenX = sisyphusCrushWorldX - worldScrollX
+    if (crushScreenX > -50 && crushScreenX < (gameCanvas.value?.width || 800) + 50) {
+      const crushY = getHillYAtScreenX(crushScreenX, height)
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 2
+      // Body lying flat
+      ctx.beginPath()
+      ctx.moveTo(crushScreenX - 15, crushY - 3)
+      ctx.lineTo(crushScreenX + 18, crushY - 4)
+      ctx.stroke()
+      // Head
+      ctx.beginPath()
+      ctx.arc(crushScreenX - 20, crushY - 5, 5, 0, Math.PI * 2)
+      ctx.stroke()
+      // Arms sprawled
+      ctx.beginPath()
+      ctx.moveTo(crushScreenX - 5, crushY - 4)
+      ctx.lineTo(crushScreenX - 12, crushY - 14)
+      ctx.moveTo(crushScreenX + 8, crushY - 4)
+      ctx.lineTo(crushScreenX + 5, crushY - 16)
+      ctx.stroke()
+      // Legs sprawled
+      ctx.beginPath()
+      ctx.moveTo(crushScreenX + 18, crushY - 4)
+      ctx.lineTo(crushScreenX + 28, crushY - 2)
+      ctx.moveTo(crushScreenX + 18, crushY - 4)
+      ctx.lineTo(crushScreenX + 25, crushY + 5)
+      ctx.stroke()
+    }
+    return
+  }
+  if (gameState.value === 'final_thought') return
   if (feetScreenX < -50) return
 
-  // Flattened state (crushed)
+  // Flattened state (crushed) - lying-flat stick figure
   if (sisyphusFlattened && gameState.value === 'crushing') {
     ctx.strokeStyle = '#fff'
     ctx.lineWidth = 2
+    const crushScreenX = sisyphusCrushWorldX - worldScrollX
+    const crushY = getHillYAtScreenX(crushScreenX, height)
+
+    // Body lying flat
     ctx.beginPath()
-    ctx.moveTo(feetScreenX - 18, feetY)
-    ctx.lineTo(feetScreenX + 18, feetY)
+    ctx.moveTo(crushScreenX - 15, crushY - 3)
+    ctx.lineTo(crushScreenX + 18, crushY - 4)
+    ctx.stroke()
+
+    // Head
+    ctx.beginPath()
+    ctx.arc(crushScreenX - 20, crushY - 5, 5, 0, Math.PI * 2)
+    ctx.stroke()
+
+    // Arms sprawled
+    ctx.beginPath()
+    ctx.moveTo(crushScreenX - 5, crushY - 4)
+    ctx.lineTo(crushScreenX - 12, crushY - 14)
+    ctx.moveTo(crushScreenX + 8, crushY - 4)
+    ctx.lineTo(crushScreenX + 5, crushY - 16)
+    ctx.stroke()
+
+    // Legs sprawled
+    ctx.beginPath()
+    ctx.moveTo(crushScreenX + 18, crushY - 4)
+    ctx.lineTo(crushScreenX + 28, crushY - 2)
+    ctx.moveTo(crushScreenX + 18, crushY - 4)
+    ctx.lineTo(crushScreenX + 25, crushY + 5)
     ctx.stroke()
     return
   }
@@ -2000,32 +2149,9 @@ function drawSisyphusAndBoulder(width: number, height: number) {
 
       // Draw sassy comment speech bubble
       if (currentSassyComment) {
-        ctx.fillStyle = '#fff'
-        ctx.font = '14px monospace'
-        const textWidth = ctx.measureText(currentSassyComment).width
-        const bubbleX = feetScreenX - textWidth / 2
-        const bubbleY = shoulderY - 40
-
-        // Speech bubble background
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
-        ctx.beginPath()
-        ctx.roundRect(bubbleX - 10, bubbleY - 18, textWidth + 20, 28, 5)
-        ctx.fill()
-        ctx.strokeStyle = '#fff'
-        ctx.lineWidth = 1
-        ctx.stroke()
-
-        // Speech bubble pointer
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
-        ctx.beginPath()
-        ctx.moveTo(feetScreenX - 5, bubbleY + 10)
-        ctx.lineTo(feetScreenX, bubbleY + 20)
-        ctx.lineTo(feetScreenX + 5, bubbleY + 10)
-        ctx.fill()
-
-        // Text
-        ctx.fillStyle = '#fff'
-        ctx.fillText(currentSassyComment, bubbleX, bubbleY)
+        drawBubble(feetScreenX, shoulderY, currentSassyComment, 'speech', {
+          font: '12px monospace', offsetX: -20, offsetY: -50
+        })
       }
     } else {
       // Phase 4: Walking toward boulder
@@ -2299,89 +2425,27 @@ function drawSisyphusAndBoulder(width: number, height: number) {
 function drawThoughtBubble(width: number, height: number) {
   if (!ctx || !currentThought || gameState.value !== 'playing') return
 
-  const playerScreenX = worldDistance - worldScrollX // Sisyphus position
+  const playerScreenX = worldDistance - worldScrollX
   const playerY = getHillYAtScreenX(playerScreenX, height)
   const headY = playerY - 50
 
-  const bubbleX = playerScreenX + 50
-  const bubbleY = headY - 60
-
   const alpha = currentThought.timer < 0.5 ? currentThought.timer * 2 : currentThought.fadeIn
-  ctx.globalAlpha = alpha
-
-  ctx.fillStyle = '#fff'
-  ctx.strokeStyle = '#333'
-  ctx.lineWidth = 2
-  ctx.font = '11px monospace'
-
-  const words = currentThought.text.split(' ')
-  const lines: string[] = []
-  let currentLine = ''
-  for (const word of words) {
-    const testLine = currentLine + word + ' '
-    if (ctx.measureText(testLine).width > 180 && currentLine) {
-      lines.push(currentLine.trim())
-      currentLine = word + ' '
-    } else {
-      currentLine = testLine
-    }
-  }
-  lines.push(currentLine.trim())
-
-  const bubbleWidth = Math.min(200, Math.max(...lines.map(l => ctx!.measureText(l).width)) + 24)
-  const bubbleHeight = lines.length * 15 + 18
-
-  // Bubble
-  ctx.beginPath()
-  ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, 12)
-  ctx.fill()
-  ctx.stroke()
-
-  // Thought dots
-  ctx.beginPath()
-  ctx.arc(bubbleX - 5, bubbleY + bubbleHeight + 10, 6, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.arc(bubbleX - 12, bubbleY + bubbleHeight + 22, 4, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.stroke()
-
-  // Text
-  ctx.fillStyle = '#000'
-  lines.forEach((line, i) => {
-    ctx!.fillText(line, bubbleX + 10, bubbleY + 16 + i * 15)
+  drawBubble(playerScreenX, headY, currentThought.text, 'thought', {
+    alpha, offsetX: 30, offsetY: -40
   })
-
-  ctx.globalAlpha = 1
 }
 
 function drawFinalThought(width: number, height: number) {
   if (!ctx || gameState.value !== 'final_thought') return
 
-  const bubbleX = width / 2 - 100
-  const bubbleY = height / 2 - 50
-
   const alpha = Math.min(1, finalThoughtTimer * 2)
-  ctx.globalAlpha = alpha
+  const centerX = width / 2
+  const centerY = height / 2
 
-  ctx.fillStyle = '#fff'
-  ctx.strokeStyle = '#333'
-  ctx.lineWidth = 2
-  ctx.font = '14px monospace'
-
-  ctx.beginPath()
-  ctx.roundRect(bubbleX, bubbleY, 250, 60, 12)
-  ctx.fill()
-  ctx.stroke()
-
-  ctx.fillStyle = '#000'
-  ctx.fillText(currentFinalThought, bubbleX + 15, bubbleY + 35)
-  ctx.fillStyle = '#666'
-  ctx.font = '10px monospace'
-  ctx.fillText('- The Boulder', bubbleX + 150, bubbleY + 50)
-
-  ctx.globalAlpha = 1
+  // Use drawBubble centered on screen
+  drawBubble(centerX, centerY + 30, currentFinalThought + '\n- The Boulder', 'thought', {
+    alpha, font: '14px monospace', maxWidth: 220, offsetX: -120, offsetY: -80
+  })
 }
 
 function resizeCanvas() {
