@@ -347,7 +347,7 @@ export function useGameLoop(deps: GameLoopDeps) {
   function updateGettingUp(dt: number) {
     world.gettingUpPhase += dt
 
-    if (world.gettingUpPhase > 4) {
+    if (world.gettingUpPhase > 3) {
       world.boulderDistance = 0
       world.worldDistance = 0
       world.worldScrollX = 0

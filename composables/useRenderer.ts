@@ -856,45 +856,8 @@ export function useRenderer(deps: RendererDeps) {
       const facingRight = !continueFromPeak.value
       const dir = facingRight ? 1 : -1
 
-      if (world.gettingUpPhase < 1) {
-        const pushUp = world.gettingUpPhase * 10
-        ctx.beginPath()
-        ctx.moveTo(feetScreenX - 10 * dir, groundY - 5 - pushUp)
-        ctx.lineTo(feetScreenX + 15 * dir, groundY - 3 - pushUp * 0.3)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.arc(feetScreenX + 20 * dir, groundY - 5 - pushUp, 6, 0, Math.PI * 2)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(feetScreenX, groundY - 5 - pushUp * 0.5)
-        ctx.lineTo(feetScreenX - 5 * dir, groundY)
-        ctx.moveTo(feetScreenX + 10 * dir, groundY - 4 - pushUp * 0.3)
-        ctx.lineTo(feetScreenX + 12 * dir, groundY)
-        ctx.stroke()
-      } else if (world.gettingUpPhase < 2) {
-        const kneelProgress = world.gettingUpPhase - 1
-        const hipY = groundY - 15 - kneelProgress * 10
-        const shoulderY = hipY - 20
-
-        ctx.beginPath()
-        ctx.moveTo(feetScreenX, hipY)
-        ctx.lineTo(feetScreenX + 5 * dir, shoulderY)
-        ctx.stroke()
-
-        ctx.beginPath()
-        ctx.arc(feetScreenX + 8 * dir, shoulderY - 8, 6, 0, Math.PI * 2)
-        ctx.stroke()
-
-        ctx.beginPath()
-        ctx.moveTo(feetScreenX + 5 * dir, shoulderY)
-        ctx.lineTo(feetScreenX + 15 * dir, groundY - 5)
-        ctx.stroke()
-
-        ctx.beginPath()
-        ctx.moveTo(feetScreenX, hipY)
-        ctx.lineTo(feetScreenX - 10 * dir, groundY)
-        ctx.stroke()
-      } else if (world.gettingUpPhase < 3) {
+      if (world.gettingUpPhase < 1.5) {
+        // Standing with sassy comment
         const hipY = groundY - 18
         const shoulderY = hipY - 25
 
@@ -933,7 +896,8 @@ export function useRenderer(deps: RendererDeps) {
           })
         }
       } else {
-        const walkProgress = world.gettingUpPhase - 3
+        // Walking to boulder
+        const walkProgress = world.gettingUpPhase - 1.5
         const walkCycle = walkProgress * 8
         const bounce = Math.abs(Math.sin(walkCycle)) * 2
 
