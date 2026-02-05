@@ -172,7 +172,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     const canvas = gameCanvas.value
     const screenWidth = canvas?.width || 800
-    world.worldScrollX = Math.max(0, world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO))
+    world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
 
     const newLevel = getLevelAtDistance(world.boulderDistance)
     if (newLevel !== currentLevel.value) {
@@ -220,7 +220,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
       const canvas = gameCanvas.value
       const screenWidth = canvas?.width || 800
-      world.worldScrollX = Math.max(0, world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO))
+      world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
     }
 
     if (world.crushTime > 1.0) {
@@ -243,7 +243,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     const canvas = gameCanvas.value
     const screenWidth = canvas?.width || 800
-    world.worldScrollX = Math.max(0, world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO))
+    world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
 
     if (world.gameTime - world.lastRollSoundTime > 0.12 && world.boulderVelocity > 5) {
       play8BitSound('roll')
@@ -299,7 +299,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     const canvas = gameCanvas.value
     const screenWidth = canvas?.width || 800
-    world.worldScrollX = Math.max(0, world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO))
+    world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
 
     if (world.gameTime - world.lastRollSoundTime > 0.1 && world.boulderVelocity > 5) {
       play8BitSound('roll')
@@ -350,7 +350,6 @@ export function useGameLoop(deps: GameLoopDeps) {
     if (world.gettingUpPhase > 3) {
       world.boulderDistance = 0
       world.worldDistance = 0
-      world.worldScrollX = 0
       world.boulderVelocity = 0
       world.pushPower = 0.5
       world.lastTapTime = Date.now()

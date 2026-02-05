@@ -853,8 +853,9 @@ export function useRenderer(deps: RendererDeps) {
       ctx.strokeStyle = '#fff'
       ctx.lineWidth = 2
 
-      const facingRight = !continueFromPeak.value
-      const dir = facingRight ? 1 : -1
+      // Walk toward boulder: after crush he's to the right, after peak he's to the left
+      const walkingLeft = !continueFromPeak.value
+      const dir = walkingLeft ? -1 : 1
 
       if (world.gettingUpPhase < 1.5) {
         // Standing with sassy comment

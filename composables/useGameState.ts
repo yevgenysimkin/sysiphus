@@ -138,7 +138,7 @@ export function useGameState() {
     world.boulderDistance = startDist
     world.worldDistance = Math.max(0, startDist - 40)
     const initialScreenWidth = (typeof window !== 'undefined' ? window.innerWidth : 800)
-    world.worldScrollX = Math.max(0, world.boulderDistance - (initialScreenWidth * PLAYER_SCREEN_X_RATIO))
+    world.worldScrollX = world.boulderDistance - (initialScreenWidth * PLAYER_SCREEN_X_RATIO)
 
     if (startDist > 0) {
       currentLevel.value = getLevelAtDistance(startDist)
