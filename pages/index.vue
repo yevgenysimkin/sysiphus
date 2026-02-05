@@ -51,6 +51,18 @@
       <p class="sound-note">🔊 Sound effects included</p>
     </div>
 
+    <!-- Continue Prompt -->
+    <div class="continue-prompt" v-if="gameState === 'continue_prompt'">
+      <div class="continue-box">
+        <h2>CONTINUE?</h2>
+        <div class="continue-timer">{{ Math.ceil(continueTimer) }}</div>
+        <div class="continue-buttons">
+          <button @click="acceptContinue" class="continue-btn yes-btn">YES</button>
+          <button @click="declineContinue" class="continue-btn no-btn">NO</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Credits Roll -->
     <div class="overlay credits-screen" v-if="gameState === 'credits'">
       <div class="credits-scroll" :style="{ transform: `translateY(${creditsY}px)` }">
@@ -139,13 +151,15 @@ let autoPlayMode = false
 let lastAutoTapTime = 0
 
 // Game state
-const gameState = ref<'start' | 'playing' | 'crushing' | 'rolling_back' | 'rolling_over' | 'final_thought' | 'credits' | 'gameover'>('start')
+const gameState = ref<'start' | 'playing' | 'crushing' | 'rolling_back' | 'rolling_over' | 'continue_prompt' | 'getting_up' | 'final_thought' | 'credits' | 'gameover'>('start')
 const autoPlay = ref(false)
 const score = ref(0)
 const displayScore = ref(0)
 const finalScore = ref(0)
 const intensity = ref(50)
 const leaderboard = ref<{ initials: string; score: number }[]>([])
+const continueTimer = ref(5) // 5 second countdown
+const continueFromPeak = ref(false) // Did we come from rolling over (vs rolling back)?
 
 // Level system - loaded from config
 import gameConfig from '~/game.config.json'
@@ -184,7 +198,7 @@ const progressPercent = computed(() => {
 })
 
 const showGameUI = computed(() => {
-  return ['playing', 'crushing', 'rolling_back', 'rolling_over'].includes(gameState.value)
+  return ['playing', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up'].includes(gameState.value)
 })
 
 // Credits data
@@ -258,6 +272,21 @@ const boulderExclamations = [
   "Catch me if you can!", "Later, loser!", "So long, sucker!",
   "Hahahaha!", "This is the life!", "Weeeee!", "I'm FREE!", "See ya!"
 ]
+
+// Sisyphus sassy comments when player continues
+const sassyComments = [
+  "Seriously? Don't you have work to do?",
+  "You know this never ends, right?",
+  "Glutton for punishment, I see...",
+  "Here we go again...",
+  "You're not going to let me rest, are you?",
+  "Fine. FINE. Let's do this.",
+  "My therapist is going to hear about this.",
+]
+
+// Getting up state
+let gettingUpPhase = 0
+let currentSassyComment = ''
 
 // Initials
 const initials = ref(['', '', ''])
@@ -696,7 +725,7 @@ function maybeSpawnEvents() {
 }
 
 function gameLoop() {
-  const validStates = ['playing', 'crushing', 'rolling_back', 'rolling_over', 'final_thought', 'credits']
+  const validStates = ['playing', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up', 'final_thought', 'credits']
   if (!validStates.includes(gameState.value)) return
 
   const canvas = gameCanvas.value
@@ -722,6 +751,10 @@ function gameLoop() {
     updateRollingBack(dt)
   } else if (gameState.value === 'rolling_over') {
     updateRollingOver(dt)
+  } else if (gameState.value === 'continue_prompt') {
+    updateContinuePrompt(dt)
+  } else if (gameState.value === 'getting_up') {
+    updateGettingUp(dt)
   } else if (gameState.value === 'final_thought') {
     updateFinalThought(dt)
   } else if (gameState.value === 'credits') {
@@ -853,10 +886,10 @@ function updateRollingBack(dt: number) {
     boulderVelocity *= 0.7
     if (boulderVelocity < 20) {
       displayScore.value = 0
-      finalScore.value = 0
-      gameState.value = 'final_thought'
-      currentFinalThought = finalThoughts[Math.floor(Math.random() * finalThoughts.length)]
-      finalThoughtTimer = 0
+      // Show continue prompt instead of ending
+      continueFromPeak.value = false
+      continueTimer.value = 5
+      gameState.value = 'continue_prompt'
     }
   }
 }
@@ -908,8 +941,8 @@ function updateRollingOver(dt: number) {
 
   boulderDistance += boulderVelocity * dt * 0.1
 
-  // Boulder bounces as it rolls
-  boulderBounce = Math.abs(Math.sin(boulderRotation * 2)) * (boulderVelocity * 0.03)
+  // Boulder bounces as it rolls (subtle, perpendicular to slope)
+  boulderBounce = Math.abs(Math.sin(boulderRotation * 3)) * Math.min(8, boulderVelocity * 0.008)
 
   // Score descends proportionally - reaches 0 when boulder stops
   const totalRollDistance = flatGroundDistance - PEAK_DISTANCE + 500
@@ -965,9 +998,62 @@ function updateRollingOver(dt: number) {
   // End game when boulder comes to rest on flat ground
   if (boulderDistance > flatGroundDistance && boulderVelocity < 5) {
     displayScore.value = 0
-    gameState.value = 'final_thought'
-    currentFinalThought = "Well, there it goes..."
-    finalThoughtTimer = 0
+    // Show continue prompt instead of ending
+    continueFromPeak.value = true
+    continueTimer.value = 5
+    gameState.value = 'continue_prompt'
+  }
+}
+
+function updateContinuePrompt(dt: number) {
+  continueTimer.value -= dt
+  if (continueTimer.value <= 0) {
+    // Time ran out - player chose not to continue
+    declineContinue()
+  }
+}
+
+function acceptContinue() {
+  // Player wants to continue!
+  currentSassyComment = sassyComments[Math.floor(Math.random() * sassyComments.length)]
+  gettingUpPhase = 0
+  gameState.value = 'getting_up'
+}
+
+function declineContinue() {
+  // Player is done
+  finalScore.value = 0
+  gameState.value = 'final_thought'
+  currentFinalThought = continueFromPeak.value
+    ? "Well, there it goes..."
+    : finalThoughts[Math.floor(Math.random() * finalThoughts.length)]
+  finalThoughtTimer = 0
+}
+
+function updateGettingUp(dt: number) {
+  gettingUpPhase += dt
+
+  // Phase 1 (0-2s): Sisyphus gets up
+  // Phase 2 (2-4s): Walks to correct side of boulder, shows sassy comment
+  // Phase 3 (4s+): Resume playing
+
+  if (gettingUpPhase > 4) {
+    // Resume playing - reset to start
+    // Regardless of where boulder ended up, we start over at the bottom
+    boulderDistance = 0
+    worldDistance = 0
+    worldScrollX = 0
+    boulderVelocity = 0
+    pushPower = 0.5 // Give a little starting push
+    lastTapTime = Date.now()
+    score.value = 0
+    displayScore.value = 0
+    displayLevel.value = 1
+    sisyphusFlattened = false
+    sisyphusFallen = false
+    sisyphusRunning = false
+    reachedPeak = false
+    gameState.value = 'playing'
   }
 }
 
@@ -1711,6 +1797,16 @@ function drawSisyphusAndBoulder(width: number, height: number) {
     boulderScreenX = boulderDistance - worldScrollX
     // Sisyphus tumbles behind the boulder
     feetScreenX = boulderScreenX + sisyphusTumbleX
+  } else if (gameState.value === 'continue_prompt' || gameState.value === 'getting_up') {
+    boulderScreenX = boulderDistance - worldScrollX
+    // Sisyphus is near the boulder
+    if (continueFromPeak.value) {
+      // Boulder rolled over peak - Sisyphus is behind it (to the left)
+      feetScreenX = boulderScreenX - 50
+    } else {
+      // Boulder rolled back - Sisyphus is in front of it (to the right)
+      feetScreenX = boulderScreenX + 50
+    }
   } else {
     // Normal playing: boulder position from boulderDistance, Sisyphus behind it
     boulderScreenX = boulderDistance - worldScrollX
@@ -1718,12 +1814,20 @@ function drawSisyphusAndBoulder(width: number, height: number) {
   }
 
   const boulderBaseY = getHillYAtScreenX(boulderScreenX, height) - boulderRadius - 3
-  const boulderY = boulderBaseY - boulderBounce // Add bounce
+  // Calculate slope angle for perpendicular bounce
+  const slopeY1 = getHillYAtScreenX(boulderScreenX - 5, height)
+  const slopeY2 = getHillYAtScreenX(boulderScreenX + 5, height)
+  const slopeAngle = Math.atan2(slopeY1 - slopeY2, 10) // Angle of slope
+  // Bounce perpendicular to slope (normal direction)
+  const bounceX = Math.sin(slopeAngle) * boulderBounce
+  const bounceY = Math.cos(slopeAngle) * boulderBounce
+  const boulderX = boulderScreenX + bounceX
+  const boulderY = boulderBaseY - bounceY
   const feetY = getHillYAtScreenX(feetScreenX, height)
 
   // Draw boulder first
   ctx.save()
-  ctx.translate(boulderScreenX, boulderY)
+  ctx.translate(boulderX, boulderY)
   ctx.rotate(boulderRotation)
 
   ctx.fillStyle = '#505050'
@@ -1755,6 +1859,214 @@ function drawSisyphusAndBoulder(width: number, height: number) {
     ctx.moveTo(feetScreenX - 18, feetY)
     ctx.lineTo(feetScreenX + 18, feetY)
     ctx.stroke()
+    return
+  }
+
+  // Continue prompt - Sisyphus face-planted
+  if (gameState.value === 'continue_prompt') {
+    const groundY = getHillYAtScreenX(feetScreenX, height)
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 2
+
+    // Face-planted body
+    const facingRight = !continueFromPeak.value // If boulder rolled back, he's facing right
+    const dir = facingRight ? 1 : -1
+
+    // Body lying flat
+    ctx.beginPath()
+    ctx.moveTo(feetScreenX - 15 * dir, groundY - 5)
+    ctx.lineTo(feetScreenX + 20 * dir, groundY - 3)
+    ctx.stroke()
+
+    // Head
+    ctx.beginPath()
+    ctx.arc(feetScreenX + 25 * dir, groundY - 5, 6, 0, Math.PI * 2)
+    ctx.stroke()
+
+    // Arms sprawled
+    ctx.beginPath()
+    ctx.moveTo(feetScreenX, groundY - 5)
+    ctx.lineTo(feetScreenX - 10 * dir, groundY - 15)
+    ctx.moveTo(feetScreenX + 10 * dir, groundY - 4)
+    ctx.lineTo(feetScreenX + 15 * dir, groundY - 18)
+    ctx.stroke()
+
+    // Legs sprawled
+    ctx.beginPath()
+    ctx.moveTo(feetScreenX - 15 * dir, groundY - 5)
+    ctx.lineTo(feetScreenX - 25 * dir, groundY - 2)
+    ctx.moveTo(feetScreenX - 15 * dir, groundY - 5)
+    ctx.lineTo(feetScreenX - 20 * dir, groundY + 5)
+    ctx.stroke()
+    return
+  }
+
+  // Getting up animation
+  if (gameState.value === 'getting_up') {
+    const groundY = getHillYAtScreenX(feetScreenX, height)
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 2
+
+    const facingRight = !continueFromPeak.value
+    const dir = facingRight ? 1 : -1
+
+    if (gettingUpPhase < 1) {
+      // Phase 1: Still on ground, starting to push up
+      const pushUp = gettingUpPhase * 10
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX - 10 * dir, groundY - 5 - pushUp)
+      ctx.lineTo(feetScreenX + 15 * dir, groundY - 3 - pushUp * 0.3)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(feetScreenX + 20 * dir, groundY - 5 - pushUp, 6, 0, Math.PI * 2)
+      ctx.stroke()
+      // Arms pushing up
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX, groundY - 5 - pushUp * 0.5)
+      ctx.lineTo(feetScreenX - 5 * dir, groundY)
+      ctx.moveTo(feetScreenX + 10 * dir, groundY - 4 - pushUp * 0.3)
+      ctx.lineTo(feetScreenX + 12 * dir, groundY)
+      ctx.stroke()
+    } else if (gettingUpPhase < 2) {
+      // Phase 2: Getting to knees
+      const kneelProgress = gettingUpPhase - 1
+      const bodyAngle = (1 - kneelProgress) * 0.5 // From horizontal to more upright
+
+      const hipY = groundY - 15 - kneelProgress * 10
+      const shoulderY = hipY - 20
+
+      // Body
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX, hipY)
+      ctx.lineTo(feetScreenX + 5 * dir, shoulderY)
+      ctx.stroke()
+
+      // Head
+      ctx.beginPath()
+      ctx.arc(feetScreenX + 8 * dir, shoulderY - 8, 6, 0, Math.PI * 2)
+      ctx.stroke()
+
+      // Arms on ground/pushing
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX + 5 * dir, shoulderY)
+      ctx.lineTo(feetScreenX + 15 * dir, groundY - 5)
+      ctx.stroke()
+
+      // Legs kneeling
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX, hipY)
+      ctx.lineTo(feetScreenX - 10 * dir, groundY)
+      ctx.stroke()
+    } else if (gettingUpPhase < 3) {
+      // Phase 3: Standing up, looking at camera with sassy comment
+      const standProgress = gettingUpPhase - 2
+
+      const hipY = groundY - 18
+      const shoulderY = hipY - 25
+
+      // Body standing
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX, hipY)
+      ctx.lineTo(feetScreenX, shoulderY)
+      ctx.stroke()
+
+      // Head - looking at camera (player)
+      ctx.beginPath()
+      ctx.arc(feetScreenX, shoulderY - 8, 6, 0, Math.PI * 2)
+      ctx.stroke()
+
+      // Eyes looking at player (dots)
+      ctx.fillStyle = '#fff'
+      ctx.beginPath()
+      ctx.arc(feetScreenX - 2, shoulderY - 9, 1.5, 0, Math.PI * 2)
+      ctx.arc(feetScreenX + 2, shoulderY - 9, 1.5, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Arms crossed or on hips (annoyed pose)
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX, shoulderY)
+      ctx.lineTo(feetScreenX - 12, shoulderY + 10)
+      ctx.moveTo(feetScreenX, shoulderY)
+      ctx.lineTo(feetScreenX + 12, shoulderY + 10)
+      ctx.stroke()
+
+      // Legs
+      ctx.beginPath()
+      ctx.moveTo(feetScreenX, hipY)
+      ctx.lineTo(feetScreenX - 8, groundY)
+      ctx.moveTo(feetScreenX, hipY)
+      ctx.lineTo(feetScreenX + 8, groundY)
+      ctx.stroke()
+
+      // Draw sassy comment speech bubble
+      if (currentSassyComment) {
+        ctx.fillStyle = '#fff'
+        ctx.font = '14px monospace'
+        const textWidth = ctx.measureText(currentSassyComment).width
+        const bubbleX = feetScreenX - textWidth / 2
+        const bubbleY = shoulderY - 40
+
+        // Speech bubble background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+        ctx.beginPath()
+        ctx.roundRect(bubbleX - 10, bubbleY - 18, textWidth + 20, 28, 5)
+        ctx.fill()
+        ctx.strokeStyle = '#fff'
+        ctx.lineWidth = 1
+        ctx.stroke()
+
+        // Speech bubble pointer
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+        ctx.beginPath()
+        ctx.moveTo(feetScreenX - 5, bubbleY + 10)
+        ctx.lineTo(feetScreenX, bubbleY + 20)
+        ctx.lineTo(feetScreenX + 5, bubbleY + 10)
+        ctx.fill()
+
+        // Text
+        ctx.fillStyle = '#fff'
+        ctx.fillText(currentSassyComment, bubbleX, bubbleY)
+      }
+    } else {
+      // Phase 4: Walking toward boulder
+      const walkProgress = gettingUpPhase - 3
+      const walkCycle = walkProgress * 8
+      const bounce = Math.abs(Math.sin(walkCycle)) * 2
+
+      // Move toward boulder
+      const walkX = feetScreenX + (walkProgress * 50 * dir)
+      const hipY = groundY - 18 - bounce
+      const shoulderY = hipY - 25
+
+      // Body
+      ctx.beginPath()
+      ctx.moveTo(walkX, hipY)
+      ctx.lineTo(walkX + 3 * dir, shoulderY)
+      ctx.stroke()
+
+      // Head
+      ctx.beginPath()
+      ctx.arc(walkX + 5 * dir, shoulderY - 8, 6, 0, Math.PI * 2)
+      ctx.stroke()
+
+      // Arms swinging
+      const armSwing = Math.sin(walkCycle) * 0.5
+      ctx.beginPath()
+      ctx.moveTo(walkX + 3 * dir, shoulderY)
+      ctx.lineTo(walkX + 3 * dir - 10 * armSwing, shoulderY + 15)
+      ctx.moveTo(walkX + 3 * dir, shoulderY)
+      ctx.lineTo(walkX + 3 * dir + 10 * armSwing, shoulderY + 15)
+      ctx.stroke()
+
+      // Legs walking
+      const legSwing = Math.sin(walkCycle)
+      ctx.beginPath()
+      ctx.moveTo(walkX, hipY)
+      ctx.lineTo(walkX + legSwing * 10, groundY)
+      ctx.moveTo(walkX, hipY)
+      ctx.lineTo(walkX - legSwing * 10, groundY)
+      ctx.stroke()
+    }
     return
   }
 
@@ -2262,6 +2574,76 @@ canvas {
 .entry-score { width: 60px; text-align: left; }
 
 .restart-btn { margin-top: 20px; }
+
+/* Continue Prompt */
+.continue-prompt {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.continue-box {
+  background: rgba(0, 0, 0, 0.9);
+  border: 3px solid #fff;
+  padding: 30px 50px;
+  text-align: center;
+  color: #fff;
+  font-family: inherit;
+}
+
+.continue-box h2 {
+  font-size: 36px;
+  margin-bottom: 15px;
+  letter-spacing: 5px;
+}
+
+.continue-timer {
+  font-size: 72px;
+  color: #ffd700;
+  margin: 20px 0;
+}
+
+.continue-buttons {
+  display: flex;
+  gap: 30px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.continue-btn {
+  padding: 15px 40px;
+  font-size: 24px;
+  font-family: inherit;
+  cursor: pointer;
+  border: 2px solid #fff;
+  transition: all 0.2s;
+}
+
+.yes-btn {
+  background: #2d5a2d;
+  color: #fff;
+}
+
+.yes-btn:hover {
+  background: #4ade80;
+  color: #000;
+}
+
+.no-btn {
+  background: #5a2d2d;
+  color: #fff;
+}
+
+.no-btn:hover {
+  background: #ef4444;
+  color: #fff;
+}
 
 /* Credits */
 .credits-screen { overflow: hidden; }
