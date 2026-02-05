@@ -20,6 +20,7 @@ interface GameLoopDeps {
     worldDistance: number
     boulderDistance: number
     worldScrollX: number
+    pushDir: 1 | -1
     pushPower: number
     lastTapTime: number
     tapTimes: number[]
@@ -87,6 +88,20 @@ export function useGameLoop(deps: GameLoopDeps) {
 
   let animationId = 0
 
+  /** Map boulderDistance to canonical 0→PEAK_DISTANCE for angle/level lookups */
+  function effectiveDist(): number {
+    return world.pushDir > 0 ? world.boulderDistance : 2 * PEAK_DISTANCE - world.boulderDistance
+  }
+
+  /** Clamp boulderDistance toward the current "bottom" */
+  function clampToBottom(): void {
+    if (world.pushDir > 0) {
+      world.boulderDistance = Math.max(0, world.boulderDistance)
+    } else {
+      world.boulderDistance = Math.min(PEAK_DISTANCE * 2, world.boulderDistance)
+    }
+  }
+
   function spawnBird() {
     const canvas = gameCanvas.value
     if (!canvas) return
@@ -142,7 +157,7 @@ export function useGameLoop(deps: GameLoopDeps) {
     world.boulderVelocity = 80
     finalScore.value = score.value
     world.sisyphusTumbleRotation = 0
-    world.sisyphusTumbleX = -70
+    world.sisyphusTumbleX = -70 * world.pushDir
     world.sisyphusFallen = false
     world.sisyphusRunning = true
     triggerBoulderExclamation()
@@ -151,23 +166,24 @@ export function useGameLoop(deps: GameLoopDeps) {
   function updatePlaying(dt: number) {
     const now = Date.now()
     const timeSinceLastTap = (now - world.lastTapTime) / 1000
+    const pd = world.pushDir
 
     world.pushPower *= PUSH_DECAY
 
-    const currentAngle = getAngleAtDistance(world.boulderDistance)
+    const currentAngle = getAngleAtDistance(effectiveDist())
     const requiredForce = Math.sin(currentAngle * Math.PI / 180) * GRAVITY_MULT
     const netForce = world.pushPower - requiredForce
 
     if (netForce > 0) {
       const moveAmount = netForce * dt * PUSH_MULT
-      world.boulderDistance += moveAmount
-      world.worldDistance = world.boulderDistance - 40
+      world.boulderDistance += moveAmount * pd
+      world.worldDistance = world.boulderDistance - 40 * pd
       score.value += netForce * dt * 10
       displayScore.value = score.value
     } else {
-      world.boulderDistance += netForce * dt * SLIDE_MULT
-      world.boulderDistance = Math.max(0, world.boulderDistance)
-      world.worldDistance = Math.max(0, world.boulderDistance - 40)
+      world.boulderDistance += netForce * dt * SLIDE_MULT * pd
+      clampToBottom()
+      world.worldDistance = world.boulderDistance - 40 * pd
       if (Math.random() > 0.85) play8BitSound('slip')
     }
 
@@ -175,7 +191,7 @@ export function useGameLoop(deps: GameLoopDeps) {
     const screenWidth = canvas?.width || 800
     world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
 
-    const newLevel = getLevelAtDistance(world.boulderDistance)
+    const newLevel = getLevelAtDistance(effectiveDist())
     if (newLevel !== currentLevel.value) {
       if (newLevel > currentLevel.value) {
         levelAnnouncement.value = `LEVEL ${newLevel}!`
@@ -194,7 +210,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       return
     }
 
-    if (world.boulderDistance >= PEAK_DISTANCE) {
+    if ((world.boulderDistance - PEAK_DISTANCE) * pd >= 0) {
       startRollingOver()
       return
     }
@@ -204,18 +220,19 @@ export function useGameLoop(deps: GameLoopDeps) {
   }
 
   function updateCrushing(dt: number) {
+    const pd = world.pushDir
     world.crushTime += dt
 
     // Brief stagger (0.2s), then boulder rolls backward (downhill)
     if (world.crushTime > 0.2) {
       const elapsed = world.crushTime - 0.2
       const rollSpeed = 40 + elapsed * 200 // accelerating downhill
-      world.boulderDistance -= rollSpeed * dt
-      world.boulderDistance = Math.max(0, world.boulderDistance)
-      world.boulderRotation -= rollSpeed * dt * 0.02
+      world.boulderDistance -= rollSpeed * dt * pd
+      clampToBottom()
+      world.boulderRotation -= rollSpeed * dt * 0.02 * pd
 
       // Flatten Sisyphus when boulder rolls back over his position
-      if (world.boulderDistance <= world.sisyphusCrushWorldX + 30) {
+      if ((world.sisyphusCrushWorldX - world.boulderDistance) * pd >= -30) {
         world.sisyphusFlattened = true
       }
 
@@ -232,15 +249,17 @@ export function useGameLoop(deps: GameLoopDeps) {
   }
 
   function updateRollingBack(dt: number) {
+    const pd = world.pushDir
     world.boulderVelocity += 150 * dt
-    world.boulderDistance -= world.boulderVelocity * dt * 0.15
-    world.boulderDistance = Math.max(0, world.boulderDistance)
+    world.boulderDistance -= world.boulderVelocity * dt * 0.15 * pd
+    clampToBottom()
 
+    const eDist = effectiveDist()
     const startDist = finalScore.value / 5
-    const scoreRatio = world.boulderDistance / Math.max(startDist, 100)
+    const scoreRatio = eDist / Math.max(startDist, 100)
     displayScore.value = Math.max(0, Math.floor(finalScore.value * scoreRatio))
 
-    displayLevel.value = getLevelAtDistance(world.boulderDistance)
+    displayLevel.value = getLevelAtDistance(eDist)
 
     const canvas = gameCanvas.value
     const screenWidth = canvas?.width || 800
@@ -251,15 +270,16 @@ export function useGameLoop(deps: GameLoopDeps) {
       world.lastRollSoundTime = world.gameTime
     }
 
-    world.boulderRotation -= world.boulderVelocity * dt * 0.02
+    world.boulderRotation -= world.boulderVelocity * dt * 0.02 * pd
 
     world.boulderExclamationTimer -= dt
     if (world.boulderExclamationTimer <= 0 && world.boulderVelocity > 20) {
       triggerBoulderExclamation()
     }
 
-    if (world.boulderDistance <= 5) {
-      world.boulderDistance = 0
+    const atBottom = pd > 0 ? world.boulderDistance <= 5 : world.boulderDistance >= PEAK_DISTANCE * 2 - 5
+    if (atBottom) {
+      world.boulderDistance = pd > 0 ? 0 : PEAK_DISTANCE * 2
       world.boulderVelocity *= 0.7
       if (world.boulderVelocity < 20) {
         displayScore.value = 0
@@ -271,12 +291,12 @@ export function useGameLoop(deps: GameLoopDeps) {
   }
 
   function updateRollingOver(dt: number) {
-    const flatGroundDistance = PEAK_DISTANCE * 2
-    const halfwayDown = PEAK_DISTANCE + (PEAK_DISTANCE / 2)
+    const pd = world.pushDir
+    const distFromPeak = (world.boulderDistance - PEAK_DISTANCE) * pd // always positive once past peak
 
-    if (world.boulderDistance < flatGroundDistance) {
-      const effectiveDist = Math.max(0, PEAK_DISTANCE - (world.boulderDistance - PEAK_DISTANCE))
-      const currentAngle = getAngleAtDistance(effectiveDist)
+    if (distFromPeak < PEAK_DISTANCE) {
+      const eDist = Math.max(0, PEAK_DISTANCE - distFromPeak)
+      const currentAngle = getAngleAtDistance(eDist)
       world.boulderVelocity += Math.sin(currentAngle * Math.PI / 180) * 200 * dt
     } else {
       world.boulderVelocity *= 0.94
@@ -287,15 +307,14 @@ export function useGameLoop(deps: GameLoopDeps) {
       }
     }
 
-    world.boulderDistance += world.boulderVelocity * dt * 0.1
+    world.boulderDistance += world.boulderVelocity * dt * 0.1 * pd
     world.boulderBounce = Math.abs(Math.sin(world.boulderRotation * 3)) * Math.min(8, world.boulderVelocity * 0.008)
 
-    const totalRollDistance = flatGroundDistance - PEAK_DISTANCE + 500
-    const distanceRolled = world.boulderDistance - PEAK_DISTANCE
-    const scoreRatio = Math.max(0, 1 - (distanceRolled / totalRollDistance))
+    const totalRollDistance = PEAK_DISTANCE + 500
+    const scoreRatio = Math.max(0, 1 - (distFromPeak / totalRollDistance))
     displayScore.value = Math.floor(finalScore.value * scoreRatio)
 
-    const effectiveDistance = Math.max(0, PEAK_DISTANCE - (world.boulderDistance - PEAK_DISTANCE))
+    const effectiveDistance = Math.max(0, PEAK_DISTANCE - distFromPeak)
     displayLevel.value = getLevelAtDistance(effectiveDistance)
 
     const canvas = gameCanvas.value
@@ -307,17 +326,18 @@ export function useGameLoop(deps: GameLoopDeps) {
       world.lastRollSoundTime = world.gameTime
     }
 
-    world.boulderRotation += world.boulderVelocity * dt * 0.02
+    world.boulderRotation += world.boulderVelocity * dt * 0.02 * pd
 
     if (world.sisyphusRunning) {
-      world.sisyphusTumbleX = -70
-      if (world.boulderDistance > halfwayDown && Math.random() < 0.02) {
+      world.sisyphusTumbleX = -70 * pd
+      const halfwayDown = PEAK_DISTANCE / 2
+      if (distFromPeak > halfwayDown && Math.random() < 0.02) {
         world.sisyphusRunning = false
         triggerSisyphusExclamation()
       }
     } else if (!world.sisyphusFallen) {
       world.sisyphusTumbleRotation += world.boulderVelocity * dt * 0.05
-      world.sisyphusTumbleX = -70 - Math.sin(world.sisyphusTumbleRotation) * 10
+      world.sisyphusTumbleX = -70 * pd - Math.sin(world.sisyphusTumbleRotation) * 10 * pd
     }
 
     world.boulderExclamationTimer -= dt
@@ -330,7 +350,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       triggerSisyphusExclamation()
     }
 
-    if (world.boulderDistance > flatGroundDistance && world.boulderVelocity < 5) {
+    if (distFromPeak > PEAK_DISTANCE && world.boulderVelocity < 5) {
       displayScore.value = 0
       continueFromPeak.value = true
       continueTimer.value = 5
@@ -363,8 +383,20 @@ export function useGameLoop(deps: GameLoopDeps) {
     world.gettingUpPhase += dt
 
     if (world.gettingUpPhase > 3) {
-      world.boulderDistance = 0
-      world.worldDistance = 0
+      // Flip direction if continuing from peak
+      if (continueFromPeak.value) {
+        world.pushDir = (world.pushDir * -1) as 1 | -1
+      }
+
+      // Set boulder to the current "bottom"
+      const bottom = world.pushDir > 0 ? 0 : PEAK_DISTANCE * 2
+      world.boulderDistance = bottom
+      world.worldDistance = bottom - 40 * world.pushDir
+
+      const canvas = gameCanvas.value
+      const screenWidth = canvas?.width || 800
+      world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
+
       world.boulderVelocity = 0
       world.pushPower = 0.5
       world.lastTapTime = Date.now()

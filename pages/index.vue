@@ -185,6 +185,11 @@ onMounted(() => {
       }
     }
 
+    if (params.has('rightSide')) {
+      console.log('📍 Starting on right side of peak')
+      ;(window as any).__sisyphusRightSide = true
+    }
+
     if (world.autoPlayMode) {
       console.log('🤖 Auto-play mode enabled')
       setTimeout(() => startGame(), 1000)

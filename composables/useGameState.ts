@@ -39,7 +39,8 @@ export function useGameState() {
   })
 
   const progressPercent = computed(() => {
-    return Math.min(100, Math.max(0, (world.boulderDistance / PEAK_DISTANCE) * 100))
+    const effectiveDist = world.pushDir > 0 ? world.boulderDistance : 2 * PEAK_DISTANCE - world.boulderDistance
+    return Math.min(100, Math.max(0, (effectiveDist / PEAK_DISTANCE) * 100))
   })
 
   const showGameUI = computed(() => {
@@ -56,6 +57,9 @@ export function useGameState() {
     tapTimes: [] as number[],
     gameTime: 0,
     lastFrameTime: 0,
+
+    // Direction: 1 = pushing right (toward peak), -1 = pushing left (toward peak from other side)
+    pushDir: 1 as 1 | -1,
 
     // Animation
     legPhase: 0,
@@ -150,6 +154,15 @@ export function useGameState() {
       displayScore.value = score.value
     }
 
+    const rightSide = (typeof window !== 'undefined' && (window as any).__sisyphusRightSide) || false
+    if (rightSide && startDist === 0) {
+      world.pushDir = -1
+      world.boulderDistance = PEAK_DISTANCE * 2
+      world.worldDistance = world.boulderDistance + 40
+      world.worldScrollX = world.boulderDistance - (initialScreenWidth * PLAYER_SCREEN_X_RATIO)
+    } else {
+      world.pushDir = 1
+    }
     world.pushPower = 0
     world.lastTapTime = Date.now()
     world.tapTimes = []
@@ -195,8 +208,8 @@ export function useGameState() {
     }
 
     world.trees = []
-    for (let i = 0; i < 200; i++) {
-      const worldX = Math.random() * PEAK_DISTANCE * 1.5
+    for (let i = 0; i < 400; i++) {
+      const worldX = Math.random() * PEAK_DISTANCE * 2
       world.trees.push({
         worldX,
         size: 20 + Math.random() * 40,
@@ -220,6 +233,13 @@ export function useGameState() {
       { worldX: 12000, type: 'rock' },
       { worldX: 18000, type: 'sign' },
       { worldX: 25000, type: 'souvlaki' },
+      // Mirrored side
+      { worldX: 2 * PEAK_DISTANCE - 2000, type: 'souvlaki' },
+      { worldX: 2 * PEAK_DISTANCE - 5000, type: 'sign' },
+      { worldX: 2 * PEAK_DISTANCE - 8000, type: 'bench' },
+      { worldX: 2 * PEAK_DISTANCE - 12000, type: 'rock' },
+      { worldX: 2 * PEAK_DISTANCE - 18000, type: 'sign' },
+      { worldX: 2 * PEAK_DISTANCE - 25000, type: 'souvlaki' },
     ]
 
     world.birds = []

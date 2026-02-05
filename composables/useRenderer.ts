@@ -18,6 +18,7 @@ interface RendererDeps {
     worldDistance: number
     boulderDistance: number
     worldScrollX: number
+    pushDir: 1 | -1
     pushPower: number
     gameTime: number
     legPhase: number
@@ -284,8 +285,6 @@ export function useRenderer(deps: RendererDeps) {
       const groundY = hillY(screenX, height)
       const size = tree.size
 
-      if (tree.worldX > world.boulderDistance + 200) return
-
       ctx!.strokeStyle = '#3d2817'
       ctx!.lineWidth = size * 0.15
 
@@ -444,17 +443,21 @@ export function useRenderer(deps: RendererDeps) {
     ctx.lineWidth = 1
     for (let level = 2; level <= 6; level++) {
       const markerWorldX = LEVEL_DISTANCES[level - 1]
-      const screenX = markerWorldX - world.worldScrollX
-      if (screenX > 0 && screenX < width) {
-        const y = hillY(screenX, height)
-        ctx.beginPath()
-        ctx.moveTo(screenX, y)
-        ctx.lineTo(screenX, y - 20)
-        ctx.stroke()
+      // Draw on both sides of the peak
+      const positions = [markerWorldX, 2 * PEAK_DISTANCE - markerWorldX]
+      for (const wx of positions) {
+        const screenX = wx - world.worldScrollX
+        if (screenX > 0 && screenX < width) {
+          const y = hillY(screenX, height)
+          ctx.beginPath()
+          ctx.moveTo(screenX, y)
+          ctx.lineTo(screenX, y - 20)
+          ctx.stroke()
 
-        ctx.fillStyle = '#666'
-        ctx.font = '10px monospace'
-        ctx.fillText(`L${level}`, screenX - 8, y - 25)
+          ctx.fillStyle = '#666'
+          ctx.font = '10px monospace'
+          ctx.fillText(`L${level}`, screenX - 8, y - 25)
+        }
       }
     }
 
@@ -710,9 +713,9 @@ export function useRenderer(deps: RendererDeps) {
     } else if (gameState.value === 'continue_prompt' || gameState.value === 'getting_up') {
       boulderScreenX = world.boulderDistance - world.worldScrollX
       if (continueFromPeak.value) {
-        feetScreenX = boulderScreenX - 50
+        feetScreenX = boulderScreenX - 50 * world.pushDir
       } else {
-        feetScreenX = boulderScreenX + 50
+        feetScreenX = boulderScreenX + 50 * world.pushDir
       }
     } else {
       boulderScreenX = world.boulderDistance - world.worldScrollX
@@ -755,6 +758,10 @@ export function useRenderer(deps: RendererDeps) {
       const crushScreenX = world.sisyphusCrushWorldX - world.worldScrollX
       if (crushScreenX > -50 && crushScreenX < (gameCanvas.value?.width || 800) + 50) {
         const crushY = hillY(crushScreenX, height)
+        ctx.save()
+        ctx.translate(crushScreenX, 0)
+        ctx.scale(world.pushDir, 1)
+        ctx.translate(-crushScreenX, 0)
         ctx.strokeStyle = '#fff'
         ctx.lineWidth = 2
         ctx.beginPath()
@@ -776,6 +783,7 @@ export function useRenderer(deps: RendererDeps) {
         ctx.moveTo(crushScreenX + 18, crushY - 4)
         ctx.lineTo(crushScreenX + 25, crushY + 5)
         ctx.stroke()
+        ctx.restore()
       }
       return
     }
@@ -784,10 +792,14 @@ export function useRenderer(deps: RendererDeps) {
 
     // Flattened (crushed)
     if (world.sisyphusFlattened && gameState.value === 'crushing') {
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 2
       const crushScreenX = world.sisyphusCrushWorldX - world.worldScrollX
       const crushY = hillY(crushScreenX, height)
+      ctx.save()
+      ctx.translate(crushScreenX, 0)
+      ctx.scale(world.pushDir, 1)
+      ctx.translate(-crushScreenX, 0)
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 2
 
       ctx.beginPath()
       ctx.moveTo(crushScreenX - 15, crushY - 3)
@@ -811,6 +823,7 @@ export function useRenderer(deps: RendererDeps) {
       ctx.moveTo(crushScreenX + 18, crushY - 4)
       ctx.lineTo(crushScreenX + 25, crushY + 5)
       ctx.stroke()
+      ctx.restore()
       return
     }
 
@@ -820,8 +833,7 @@ export function useRenderer(deps: RendererDeps) {
       ctx.strokeStyle = '#fff'
       ctx.lineWidth = 2
 
-      const facingRight = !continueFromPeak.value
-      const dir = facingRight ? 1 : -1
+      const dir = world.pushDir
 
       ctx.beginPath()
       ctx.moveTo(feetScreenX - 15 * dir, groundY - 5)
@@ -854,9 +866,8 @@ export function useRenderer(deps: RendererDeps) {
       ctx.strokeStyle = '#fff'
       ctx.lineWidth = 2
 
-      // Walk toward boulder: after crush he's to the right, after peak he's to the left
-      const walkingLeft = !continueFromPeak.value
-      const dir = walkingLeft ? -1 : 1
+      // Walk toward boulder: always walks toward the boulder
+      const dir = continueFromPeak.value ? world.pushDir : -world.pushDir
 
       if (world.gettingUpPhase < 1.5) {
         // Standing with sassy comment
@@ -938,8 +949,13 @@ export function useRenderer(deps: RendererDeps) {
     // Rolling over - following boulder down
     if (gameState.value === 'rolling_over') {
       const groundY = hillY(feetScreenX, height)
+      const pd = world.pushDir
 
       if (world.sisyphusFallen) {
+        ctx.save()
+        ctx.translate(feetScreenX, 0)
+        ctx.scale(pd, 1)
+        ctx.translate(-feetScreenX, 0)
         ctx.strokeStyle = '#fff'
         ctx.lineWidth = 2
         ctx.beginPath()
@@ -961,10 +977,15 @@ export function useRenderer(deps: RendererDeps) {
         ctx.moveTo(feetScreenX - 15, groundY - 5)
         ctx.lineTo(feetScreenX - 20, groundY + 5)
         ctx.stroke()
+        ctx.restore()
         return
       }
 
       if (world.sisyphusRunning) {
+        ctx.save()
+        ctx.translate(feetScreenX, 0)
+        ctx.scale(pd, 1)
+        ctx.translate(-feetScreenX, 0)
         ctx.strokeStyle = '#fff'
         ctx.lineWidth = 2
 
@@ -1000,12 +1021,14 @@ export function useRenderer(deps: RendererDeps) {
         ctx.moveTo(bodyX, hipY)
         ctx.lineTo(bodyX - legSwing * 15, groundY)
         ctx.stroke()
+        ctx.restore()
         return
       }
 
       // Tumbling
       ctx.save()
       ctx.translate(feetScreenX, groundY - 20)
+      ctx.scale(pd, 1)
       ctx.rotate(world.sisyphusTumbleRotation)
 
       ctx.strokeStyle = '#fff'
@@ -1039,8 +1062,14 @@ export function useRenderer(deps: RendererDeps) {
       return
     }
 
-    // Normal pushing state
-    const currentAngle = getAngleAtDistance(world.worldDistance)
+    // Normal pushing state — mirror when pushDir < 0
+    ctx.save()
+    ctx.translate(feetScreenX, 0)
+    ctx.scale(world.pushDir, 1)
+    ctx.translate(-feetScreenX, 0)
+
+    const effectiveWorldDist = world.pushDir > 0 ? world.worldDistance : 2 * PEAK_DISTANCE - world.worldDistance
+    const currentAngle = getAngleAtDistance(effectiveWorldDist)
     const leanAngle = 35 + (currentAngle * 0.3)
     const leanRad = leanAngle * Math.PI / 180
 
@@ -1132,6 +1161,8 @@ export function useRenderer(deps: RendererDeps) {
         ctx.stroke()
       }
     }
+
+    ctx.restore()
   }
 
   function drawCountdown(width: number, height: number) {
