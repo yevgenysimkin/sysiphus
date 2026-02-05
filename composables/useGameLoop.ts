@@ -204,24 +204,28 @@ export function useGameLoop(deps: GameLoopDeps) {
 
   function updateCrushing(dt: number) {
     world.crushTime += dt
-    if (world.crushTime > 0.4) world.sisyphusFlattened = true
 
-    if (world.crushTime > 0.4 && world.crushTime <= 1.2) {
-      if (!world.boulderRollingForward) {
-        world.boulderRollingForward = true
+    // Brief stagger (0.2s), then boulder rolls backward (downhill)
+    if (world.crushTime > 0.2) {
+      const elapsed = world.crushTime - 0.2
+      const rollSpeed = 40 + elapsed * 200 // accelerating downhill
+      world.boulderDistance -= rollSpeed * dt
+      world.boulderDistance = Math.max(0, world.boulderDistance)
+      world.boulderRotation -= rollSpeed * dt * 0.02
+
+      // Flatten Sisyphus when boulder rolls back over his position
+      if (world.boulderDistance <= world.sisyphusCrushWorldX + 30) {
+        world.sisyphusFlattened = true
       }
-      const forwardSpeed = 100
-      world.boulderDistance += forwardSpeed * dt
-      world.boulderRotation += forwardSpeed * dt * 0.02
 
       const canvas = gameCanvas.value
       const screenWidth = canvas?.width || 800
       world.worldScrollX = Math.max(0, world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO))
     }
 
-    if (world.crushTime > 1.2) {
+    if (world.crushTime > 1.0) {
       gameState.value = 'rolling_back'
-      world.boulderVelocity = 30
+      world.boulderVelocity = 80
       triggerBoulderExclamation()
     }
   }
