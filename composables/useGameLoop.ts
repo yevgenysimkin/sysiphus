@@ -51,6 +51,7 @@ interface GameLoopDeps {
     lastThoughtTime: number
     gettingUpPhase: number
     currentSassyComment: string
+    countdownTimer: number
     levelAnnouncementTimer: number
     autoPlayMode: boolean
     lastAutoTapTime: number
@@ -344,6 +345,20 @@ export function useGameLoop(deps: GameLoopDeps) {
     }
   }
 
+  function startCountdown() {
+    gameState.value = 'countdown'
+    world.countdownTimer = 0
+  }
+
+  function updateCountdown(dt: number) {
+    world.countdownTimer += dt
+    // 3 numbers (1s each) + "PUSH!" (0.5s) = 3.5s total
+    if (world.countdownTimer > 3.5) {
+      gameState.value = 'playing'
+      world.lastTapTime = Date.now()
+    }
+  }
+
   function updateGettingUp(dt: number) {
     world.gettingUpPhase += dt
 
@@ -360,7 +375,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       world.sisyphusFallen = false
       world.sisyphusRunning = false
       world.reachedPeak = false
-      gameState.value = 'playing'
+      startCountdown()
     }
   }
 
@@ -438,7 +453,7 @@ export function useGameLoop(deps: GameLoopDeps) {
   }
 
   function gameLoop() {
-    const validStates = ['playing', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up', 'final_thought', 'credits']
+    const validStates = ['playing', 'countdown', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up', 'final_thought', 'credits']
     if (!validStates.includes(gameState.value)) return
 
     const canvas = gameCanvas.value
@@ -456,7 +471,9 @@ export function useGameLoop(deps: GameLoopDeps) {
       }
     }
 
-    if (gameState.value === 'playing') {
+    if (gameState.value === 'countdown') {
+      updateCountdown(dt)
+    } else if (gameState.value === 'playing') {
       updatePlaying(dt)
     } else if (gameState.value === 'crushing') {
       updateCrushing(dt)
@@ -489,5 +506,6 @@ export function useGameLoop(deps: GameLoopDeps) {
     gameLoop,
     stopLoop,
     spawnBird,
+    startCountdown,
   }
 }

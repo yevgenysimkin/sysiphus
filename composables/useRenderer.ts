@@ -44,6 +44,7 @@ interface RendererDeps {
     currentThought: { text: string; timer: number; fadeIn: number } | null
     gettingUpPhase: number
     currentSassyComment: string
+    countdownTimer: number
     birds: Bird[]
     clouds: Cloud[]
     trees: Tree[]
@@ -1133,6 +1134,54 @@ export function useRenderer(deps: RendererDeps) {
     }
   }
 
+  function drawCountdown(width: number, height: number) {
+    if (!ctx || gameState.value !== 'countdown') return
+
+    const t = world.countdownTimer
+    let text: string
+    let isNumber = true
+    if (t < 1) text = '3'
+    else if (t < 2) text = '2'
+    else if (t < 3) text = '1'
+    else { text = 'PUSH!'; isNumber = false }
+
+    // Phase within current step (0-1)
+    const phase = t % 1
+
+    // Scale: pop in then settle
+    const scale = phase < 0.15 ? 0.5 + phase * (1 / 0.15) * 0.5 : 1
+    // Fade out at end of each step
+    const alpha = phase > 0.8 ? 1 - (phase - 0.8) / 0.2 : 1
+
+    ctx.save()
+    ctx.globalAlpha = alpha
+    ctx.translate(width / 2, height / 2 - 30)
+    ctx.scale(scale, scale)
+
+    ctx.font = isNumber ? 'bold 120px monospace' : 'bold 72px monospace'
+    ctx.fillStyle = '#fff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.strokeStyle = '#000'
+    ctx.lineWidth = 4
+    ctx.strokeText(text, 0, 0)
+    ctx.fillText(text, 0, 0)
+
+    ctx.restore()
+
+    // Instruction text below
+    if (t < 3) {
+      ctx.save()
+      ctx.globalAlpha = 0.6
+      ctx.font = '16px monospace'
+      ctx.fillStyle = '#fff'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('[press space or click to push]', width / 2, height / 2 + 50)
+      ctx.restore()
+    }
+  }
+
   function render() {
     const canvas = gameCanvas.value
     if (!canvas || !ctx) return
@@ -1166,6 +1215,7 @@ export function useRenderer(deps: RendererDeps) {
     drawExclamations(width, height)
     drawThoughtBubble(width, height)
     drawFinalThought(width, height)
+    drawCountdown(width, height)
   }
 
   return {

@@ -93,6 +93,9 @@ export function useGameState() {
     gettingUpPhase: 0,
     currentSassyComment: '',
 
+    // Countdown
+    countdownTimer: 0,
+
     // Level announcement
     levelAnnouncementTimer: 0,
 
@@ -179,6 +182,7 @@ export function useGameState() {
     world.currentSisyphusExclamation = ''
     world.sisyphusExclamationTimer = 0
     world.lastExclamationTime = 0
+    world.countdownTimer = 0
 
     world.clouds = []
     for (let i = 0; i < 10; i++) {
