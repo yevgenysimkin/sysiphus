@@ -231,86 +231,133 @@ export function useRenderer(deps: RendererDeps) {
   function drawParallaxBackground(width: number, height: number, altitude: number) {
     if (!ctx) return
 
-    // Aurora/glow at high altitude
-    if (altitude > 2000) {
-      const auroraAlpha = Math.min(0.15, (altitude - 2000) / 5000)
-      const glow = ctx.createLinearGradient(0, 0, width, height * 0.3)
-      glow.addColorStop(0, `rgba(80, 40, 120, ${auroraAlpha})`)
-      glow.addColorStop(0.3, `rgba(40, 100, 80, ${auroraAlpha * 0.7})`)
-      glow.addColorStop(0.6, `rgba(80, 60, 140, ${auroraAlpha * 0.5})`)
-      glow.addColorStop(1, `rgba(40, 80, 100, ${auroraAlpha * 0.3})`)
-      ctx.fillStyle = glow
-      ctx.fillRect(0, 0, width, height * 0.35)
+    // Ground line on screen
+    const groundY = height - GROUND_SCREEN_Y_OFFSET
+    // Progress ratio: 0 at base, 1 at peak
+    const maxAlt = getHeightAtWorldDistance(PEAK_DISTANCE)
+    const t = Math.min(1, altitude / (maxAlt || 1))
+
+    // 6 layers back-to-front, each with:
+    //   color, maxRise (how far it rises at t=1), silhouetteHeight, scrollFactor, drawFn
+    // At t=0 every layer's bottom sits at groundY (stacked, only nearest visible)
+    // At t=1 each layer has risen by maxRise pixels, revealing distant layers above nearer ones
+
+    // --- f) Mountains (furthest, drawn first) ---
+    const mtRise = t * 320
+    const mtBase = groundY - mtRise
+    const mtScroll = world.worldScrollX * 0.008
+    ctx.fillStyle = '#2e2850'
+    ctx.beginPath()
+    ctx.moveTo(0, mtBase + 10)
+    for (let x = 0; x <= width; x += 40) {
+      const h = Math.sin((x + mtScroll) * 0.008) * 90 +
+                Math.sin((x + mtScroll) * 0.015 + 2) * 50 +
+                Math.sin((x + mtScroll) * 0.003) * 60
+      ctx.lineTo(x, mtBase - Math.max(0, h))
+    }
+    ctx.lineTo(width, height)
+    ctx.lineTo(0, height)
+    ctx.closePath()
+    ctx.fill()
+
+    // --- e) Hills ---
+    const hlRise = t * 240
+    const hlBase = groundY - hlRise
+    const hlScroll = world.worldScrollX * 0.02
+    ctx.fillStyle = '#1e3328'
+    ctx.beginPath()
+    ctx.moveTo(0, hlBase + 10)
+    for (let x = 0; x <= width; x += 25) {
+      const h = Math.sin((x + hlScroll) * 0.012) * 55 +
+                Math.sin((x + hlScroll) * 0.025 + 1) * 30 +
+                Math.cos((x + hlScroll) * 0.007) * 35
+      ctx.lineTo(x, hlBase - Math.max(0, h))
+    }
+    ctx.lineTo(width, height)
+    ctx.lineTo(0, height)
+    ctx.closePath()
+    ctx.fill()
+
+    // --- d) Trees (far) ---
+    const tf3Rise = t * 170
+    const tf3Base = groundY - tf3Rise
+    const tf3Scroll = world.worldScrollX * 0.04
+    ctx.fillStyle = '#152a18'
+    ctx.beginPath()
+    ctx.moveTo(0, tf3Base + 5)
+    for (let x = 0; x <= width; x += 12) {
+      const h = Math.abs(Math.sin((x + tf3Scroll) * 0.06)) * 25 +
+                Math.sin((x + tf3Scroll) * 0.03 + 3) * 12 +
+                Math.abs(Math.sin((x + tf3Scroll) * 0.1)) * 10
+      ctx.lineTo(x, tf3Base - h)
+    }
+    ctx.lineTo(width, height)
+    ctx.lineTo(0, height)
+    ctx.closePath()
+    ctx.fill()
+
+    // --- c) River ---
+    const rvRise = t * 110
+    const rvBase = groundY - rvRise
+    const rvScroll = world.worldScrollX * 0.06
+    // River band — a flat-ish water surface
+    ctx.fillStyle = '#1a2e42'
+    ctx.beginPath()
+    ctx.moveTo(0, rvBase + 5)
+    for (let x = 0; x <= width; x += 20) {
+      const ripple = Math.sin((x + rvScroll) * 0.04 + world.gameTime * 1.5) * 3
+      ctx.lineTo(x, rvBase - 8 + ripple)
+    }
+    ctx.lineTo(width, height)
+    ctx.lineTo(0, height)
+    ctx.closePath()
+    ctx.fill()
+    // Moonlight shimmer on water
+    ctx.strokeStyle = 'rgba(180, 200, 220, 0.15)'
+    ctx.lineWidth = 1
+    for (let x = 0; x < width; x += 30) {
+      const shimX = (x + rvScroll * 0.5 + Math.sin(world.gameTime * 0.8 + x * 0.05) * 8) % width
+      const shimW = 8 + Math.sin(world.gameTime + x) * 4
+      ctx.beginPath()
+      ctx.moveTo(shimX, rvBase - 5)
+      ctx.lineTo(shimX + shimW, rvBase - 5)
+      ctx.stroke()
     }
 
-    // Distant mountains — rich purple/blue, vertical parallax
-    if (altitude > 1500) {
-      const mountainAlpha = Math.min(0.45, (altitude - 1500) / 2500)
-      const vertShift = altitude * 0.015
-      ctx.fillStyle = `rgba(50, 40, 80, ${mountainAlpha})`
-      ctx.beginPath()
-      ctx.moveTo(0, height * 0.6 + vertShift)
-      for (let x = 0; x < width; x += 50) {
-        const peakHeight = Math.sin(x * 0.01 + world.worldScrollX * 0.0001) * 80 +
-                           Math.sin(x * 0.02) * 40 +
-                           Math.sin(x * 0.005 + 1) * 50
-        ctx.lineTo(x, height * 0.5 - peakHeight + vertShift)
-      }
-      ctx.lineTo(width, height * 0.6 + vertShift)
-      ctx.closePath()
-      ctx.fill()
+    // --- b) Trees (mid) ---
+    const tf2Rise = t * 60
+    const tf2Base = groundY - tf2Rise
+    const tf2Scroll = world.worldScrollX * 0.1
+    ctx.fillStyle = '#122218'
+    ctx.beginPath()
+    ctx.moveTo(0, tf2Base + 5)
+    for (let x = 0; x <= width; x += 10) {
+      const h = Math.abs(Math.sin((x + tf2Scroll) * 0.08 + 1)) * 22 +
+                Math.sin((x + tf2Scroll) * 0.04) * 10 +
+                Math.abs(Math.sin((x + tf2Scroll) * 0.13)) * 8
+      ctx.lineTo(x, tf2Base - h)
     }
+    ctx.lineTo(width, height)
+    ctx.lineTo(0, height)
+    ctx.closePath()
+    ctx.fill()
 
-    // Mid-distance hills — deep green, vertical parallax
-    if (altitude > 500) {
-      const hillAlpha = Math.min(0.35, (altitude - 500) / 1800)
-      const vertShift = altitude * 0.025
-      ctx.fillStyle = `rgba(25, 50, 30, ${hillAlpha})`
-      ctx.beginPath()
-      ctx.moveTo(0, height * 0.7 + vertShift)
-      for (let x = 0; x < width; x += 30) {
-        const hillHeight = Math.sin(x * 0.015 + world.worldScrollX * 0.0003) * 50 +
-                           Math.sin(x * 0.03) * 25
-        ctx.lineTo(x, height * 0.6 - hillHeight + vertShift)
-      }
-      ctx.lineTo(width, height * 0.7 + vertShift)
-      ctx.closePath()
-      ctx.fill()
+    // --- a) Trees (nearest, drawn last) ---
+    const tf1Rise = t * 20
+    const tf1Base = groundY - tf1Rise
+    const tf1Scroll = world.worldScrollX * 0.15
+    ctx.fillStyle = '#0e1a10'
+    ctx.beginPath()
+    ctx.moveTo(0, tf1Base + 5)
+    for (let x = 0; x <= width; x += 8) {
+      const h = Math.abs(Math.sin((x + tf1Scroll) * 0.1 + 2)) * 18 +
+                Math.abs(Math.sin((x + tf1Scroll) * 0.15)) * 10
+      ctx.lineTo(x, tf1Base - h)
     }
-
-    // Near tree line — fades as you climb above it
-    const treeLineAlpha = Math.max(0, 0.3 - altitude / 3500)
-    if (treeLineAlpha > 0.02) {
-      const vertShift = altitude * 0.04
-      ctx.fillStyle = `rgba(15, 35, 15, ${treeLineAlpha})`
-      ctx.beginPath()
-      ctx.moveTo(0, height * 0.8 + vertShift)
-      for (let x = 0; x < width; x += 15) {
-        const treeHeight = Math.sin(x * 0.05 + world.worldScrollX * 0.001) * 20 +
-                           Math.abs(Math.sin(x * 0.1)) * 15
-        ctx.lineTo(x, height * 0.75 - treeHeight + vertShift)
-      }
-      ctx.lineTo(width, height * 0.8 + vertShift)
-      ctx.closePath()
-      ctx.fill()
-    }
-
-    // Near-field shrub layer — small bumps close to ground, fades at altitude
-    const shrubAlpha = Math.max(0, 0.2 - altitude / 2000)
-    if (shrubAlpha > 0.02) {
-      const vertShift = altitude * 0.06
-      ctx.fillStyle = `rgba(25, 45, 20, ${shrubAlpha})`
-      ctx.beginPath()
-      ctx.moveTo(0, height * 0.88 + vertShift)
-      for (let x = 0; x < width; x += 8) {
-        const shrubHeight = Math.abs(Math.sin(x * 0.15 + world.worldScrollX * 0.003)) * 8 +
-                            Math.sin(x * 0.08 + 2) * 4
-        ctx.lineTo(x, height * 0.85 - shrubHeight + vertShift)
-      }
-      ctx.lineTo(width, height * 0.88 + vertShift)
-      ctx.closePath()
-      ctx.fill()
-    }
+    ctx.lineTo(width, height)
+    ctx.lineTo(0, height)
+    ctx.closePath()
+    ctx.fill()
   }
 
   function drawTrees(width: number, height: number) {
@@ -744,11 +791,11 @@ export function useRenderer(deps: RendererDeps) {
     if (!ctx || gameState.value !== 'final_thought') return
 
     const alpha = Math.min(1, world.finalThoughtTimer * 2)
-    const centerX = width / 2
-    const centerY = height / 2
+    const boulderScreenX = world.boulderDistance - world.worldScrollX
+    const boulderY = hillY(boulderScreenX, height) - 29
 
-    drawBubble(centerX, centerY + 30, world.currentFinalThought + '\n- The Boulder', 'thought', {
-      alpha, font: '14px monospace', maxWidth: 220, offsetX: -120, offsetY: -80
+    drawBubble(boulderScreenX, boulderY, world.currentFinalThought + '\n- The Boulder', 'thought', {
+      alpha, font: '14px monospace', maxWidth: 220, offsetX: -60, offsetY: -60
     })
   }
 
@@ -1151,16 +1198,22 @@ export function useRenderer(deps: RendererDeps) {
     const headX = shoulderX + 2 + headBob
     const headY = shoulderY - headRadius - 4 + breathing
 
-    const armPushCycle = Math.sin(world.gameTime * 6) * 0.3 + world.armPhase * 0.5
-    const armExtension = 18 + armPushCycle * 8
+    // Compute boulder center in local (mirrored) coordinate space
+    const localBoulderCenterX = feetScreenX + (boulderX - feetScreenX) * world.pushDir
+    const localBoulderCenterY = boulderY
 
-    const elbowOffsetX = 12
-    const elbowOffsetY = 4 + Math.sin(world.gameTime * 6) * 3
-    const elbowX = shoulderX + elbowOffsetX
-    const elbowY = shoulderY + elbowOffsetY
+    // Hands target the near surface of the boulder
+    const armPushOffset = world.armPhase * 4
+    const handTargetX = localBoulderCenterX - boulderRadius + armPushOffset
+    const handTargetY = localBoulderCenterY
 
-    const handX = shoulderX + armExtension
-    const handY = shoulderY + 2 + Math.sin(world.gameTime * 6 + 0.5) * 4
+    // Elbow: midpoint between shoulder and hand with slight outward bend
+    const elbowX = (shoulderX + handTargetX) / 2
+    const elbowBaseY = (shoulderY + handTargetY) / 2 - 5
+    const elbowY = elbowBaseY + Math.sin(world.gameTime * 6) * 2
+
+    const handX = handTargetX
+    const handY = handTargetY + Math.sin(world.gameTime * 6 + 0.5) * 3
 
     // Legs
     ctx.beginPath()

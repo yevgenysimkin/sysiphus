@@ -13,6 +13,7 @@ interface GameLoopDeps {
   currentLevel: Ref<number>
   displayLevel: Ref<number>
   levelAnnouncement: Ref<string>
+  progressPercent: Ref<number>
   continueTimer: Ref<number>
   continueFromPeak: Ref<boolean>
   creditsY: Ref<number>
@@ -85,7 +86,7 @@ interface GameLoopDeps {
 export function useGameLoop(deps: GameLoopDeps) {
   const {
     gameCanvas, gameState, score, displayScore, finalScore, intensity,
-    currentLevel, displayLevel, levelAnnouncement, continueTimer, continueFromPeak,
+    currentLevel, displayLevel, levelAnnouncement, progressPercent, continueTimer, continueFromPeak,
     creditsY, world, registerTap, getAngleAtDistance, getLevelAtDistance,
     triggerBoulderExclamation, triggerSisyphusExclamation, declineContinue,
     play8BitSound, render, showGameOver,
@@ -265,6 +266,8 @@ export function useGameLoop(deps: GameLoopDeps) {
       return
     }
 
+    progressPercent.value = Math.min(100, Math.max(0, (effectiveDist() / PEAK_DISTANCE) * 100))
+
     checkPrometheusDialogue()
     checkLevelPhrase()
     maybeSpawnEvents()
@@ -302,7 +305,7 @@ export function useGameLoop(deps: GameLoopDeps) {
   function updateRollingBack(dt: number) {
     const pd = world.pushDir
     world.boulderVelocity += 150 * dt
-    world.boulderDistance -= world.boulderVelocity * dt * 0.15 * pd
+    world.boulderDistance -= world.boulderVelocity * dt * pd
     clampToBottom()
 
     const eDist = effectiveDist()
@@ -311,6 +314,7 @@ export function useGameLoop(deps: GameLoopDeps) {
     displayScore.value = Math.max(0, Math.floor(finalScore.value * scoreRatio))
 
     displayLevel.value = getLevelAtDistance(eDist)
+    progressPercent.value = Math.min(100, Math.max(0, (eDist / PEAK_DISTANCE) * 100))
 
     const canvas = gameCanvas.value
     const screenWidth = canvas?.width || 800
@@ -358,7 +362,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       }
     }
 
-    world.boulderDistance += world.boulderVelocity * dt * 0.1 * pd
+    world.boulderDistance += world.boulderVelocity * dt * pd
     world.boulderBounce = Math.abs(Math.sin(world.boulderRotation * 3)) * Math.min(8, world.boulderVelocity * 0.008)
 
     const totalRollDistance = PEAK_DISTANCE + 500
@@ -367,6 +371,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     const effectiveDistance = Math.max(0, PEAK_DISTANCE - distFromPeak)
     displayLevel.value = getLevelAtDistance(effectiveDistance)
+    progressPercent.value = Math.min(100, Math.max(0, (effectiveDistance / PEAK_DISTANCE) * 100))
 
     const canvas = gameCanvas.value
     const screenWidth = canvas?.width || 800

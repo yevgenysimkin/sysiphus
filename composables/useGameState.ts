@@ -39,10 +39,7 @@ export function useGameState() {
     return '#ef4444'
   })
 
-  const progressPercent = computed(() => {
-    const effectiveDist = world.pushDir > 0 ? world.boulderDistance : 2 * PEAK_DISTANCE - world.boulderDistance
-    return Math.min(100, Math.max(0, (effectiveDist / PEAK_DISTANCE) * 100))
-  })
+  const progressPercent = ref(0)
 
   const showGameUI = computed(() => {
     return ['playing', 'countdown', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up'].includes(gameState.value)
@@ -132,7 +129,7 @@ export function useGameState() {
 
   function triggerBoulderExclamation() {
     world.currentBoulderExclamation = boulderExclamations[Math.floor(Math.random() * boulderExclamations.length)]
-    world.boulderExclamationTimer = 8 + Math.random() * 4
+    world.boulderExclamationTimer = 2 + Math.random() * 2
   }
 
   function triggerSisyphusExclamation() {

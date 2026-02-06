@@ -24,7 +24,7 @@ export function useInput(
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    if (e.code === 'Space') {
+    if (e.code === 'Space' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
       e.preventDefault()
       if (gameState.value === 'playing') {
         initAudio()

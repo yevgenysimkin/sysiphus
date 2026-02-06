@@ -102,6 +102,7 @@ const loop = useGameLoop({
   currentLevel,
   displayLevel,
   levelAnnouncement,
+  progressPercent,
   continueTimer,
   continueFromPeak,
   creditsY,
