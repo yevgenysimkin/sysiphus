@@ -1,26 +1,5 @@
 // Static game content - text, dialogue, credits
 
-export const normalThoughts = [
-  "Not much further... I think I can see the plateau",
-  "Wait, is it 'plateau' or 'plateu'? Or 'plato'?",
-  "What even is a hamburger? Why did I just think of that?",
-  "At least I'm getting a good workout",
-  "I wonder what Zeus is doing right now",
-  "This boulder seems heavier today",
-  "The view up here is quite nice actually",
-  "One more push... just one more...",
-  "Is that Prometheus over there? Poor guy.",
-  "I wonder if anyone is keeping score"
-]
-
-export const desperateThoughts = [
-  "I don't know if I can go on much further...",
-  "My arms... they're giving out...",
-  "Is this how it ends? Again?",
-  "No no no no no...",
-  "Everything is going dark..."
-]
-
 export const finalThoughts = [
   "I had my doubts about that guy",
   "What did I do to deserve this?",

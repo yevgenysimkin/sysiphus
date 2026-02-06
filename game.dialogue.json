@@ -1,0 +1,34 @@
+{
+  "levelPhrases": {
+    "1": [
+      "Here we go again...",
+      "One foot in front of the other.",
+      "This hill isn't going to push itself."
+    ],
+    "2": [
+      "Starting to feel the burn...",
+      "I swear this boulder got heavier.",
+      "At least the view is nice."
+    ],
+    "3": [
+      "Halfway there... maybe?",
+      "My legs are NOT happy about this.",
+      "I should have stretched first."
+    ],
+    "4": [
+      "The air is getting thinner up here.",
+      "Don't look down. Don't look down.",
+      "Zeus is probably laughing right now."
+    ],
+    "5": [
+      "Almost... I can almost see the top...",
+      "Every muscle is screaming.",
+      "What if there's nothing up there?"
+    ],
+    "6": [
+      "This is it. The final stretch.",
+      "I can taste the summit!",
+      "One must imagine Sisyphus happy... right?"
+    ]
+  }
+}

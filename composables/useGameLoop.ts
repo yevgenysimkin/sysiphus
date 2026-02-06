@@ -1,7 +1,7 @@
 import type { Ref } from 'vue'
 import type { GameState } from './useGameState'
-import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, CONSTANT_SPEED, METER_DRAIN_RATES } from './usePhysics'
-import { normalThoughts, desperateThoughts } from '~/game/content'
+import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, CONSTANT_SPEED, METER_DRAIN_RATES, LEVEL_DISTANCES } from './usePhysics'
+import dialogue from '~/game.dialogue.json'
 
 interface GameLoopDeps {
   gameCanvas: Ref<HTMLCanvasElement | null>
@@ -48,6 +48,7 @@ interface GameLoopDeps {
     lastExclamationTime: number
     currentThought: { text: string; timer: number; fadeIn: number } | null
     lastThoughtTime: number
+    levelPhrasesSaid: Record<number, Set<number>>
     gettingUpPhase: number
     currentSassyComment: string
     countdownTimer: number
@@ -112,18 +113,37 @@ export function useGameLoop(deps: GameLoopDeps) {
     })
   }
 
-  function maybeShowThought() {
+  function checkLevelPhrase() {
     if (world.currentThought) return
-    if (world.gameTime - world.lastThoughtTime < 6) return
-    if (Math.random() > 0.02) return
 
-    const thoughts = intensity.value < 25 ? desperateThoughts : normalThoughts
-    world.currentThought = {
-      text: thoughts[Math.floor(Math.random() * thoughts.length)],
-      timer: 4,
-      fadeIn: 0
+    const level = currentLevel.value
+    const phrases = (dialogue.levelPhrases as Record<string, string[]>)[String(level)]
+    if (!phrases || phrases.length === 0) return
+
+    // Calculate progress through current level (0.0 to 1.0)
+    const levelStart = LEVEL_DISTANCES[level - 1]
+    const levelEnd = level < LEVEL_DISTANCES.length ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
+    const levelWidth = levelEnd - levelStart
+    const eDist = effectiveDist()
+    const progress = Math.max(0, Math.min(1, (eDist - levelStart) / levelWidth))
+
+    if (!world.levelPhrasesSaid[level]) {
+      world.levelPhrasesSaid[level] = new Set()
     }
-    world.lastThoughtTime = world.gameTime
+    const said = world.levelPhrasesSaid[level]
+
+    // Trigger phrases at evenly spaced positions: 1/(K+1), 2/(K+1), ...
+    const K = phrases.length
+    for (let i = 0; i < K; i++) {
+      if (said.has(i)) continue
+      const triggerAt = (i + 1) / (K + 1)
+      if (progress >= triggerAt) {
+        said.add(i)
+        world.currentThought = { text: phrases[i], timer: 4, fadeIn: 0 }
+        world.lastThoughtTime = world.gameTime
+        return
+      }
+    }
   }
 
   function maybeSpawnEvents() {
@@ -201,7 +221,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       return
     }
 
-    maybeShowThought()
+    checkLevelPhrase()
     maybeSpawnEvents()
   }
 

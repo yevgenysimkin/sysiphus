@@ -90,6 +90,7 @@ export function useGameState() {
     // Thoughts
     currentThought: null as { text: string; timer: number; fadeIn: number } | null,
     lastThoughtTime: 0,
+    levelPhrasesSaid: {} as Record<number, Set<number>>,
 
     // Getting up
     gettingUpPhase: 0,
@@ -176,6 +177,7 @@ export function useGameState() {
     world.boulderVelocity = 0
     world.currentThought = null
     world.lastThoughtTime = 0
+    world.levelPhrasesSaid = {}
     world.reachedPeak = false
     world.spaceshipActive = false
     world.prometheusGreeted = false
