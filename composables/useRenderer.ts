@@ -1889,7 +1889,11 @@ export function useRenderer(deps: RendererDeps) {
 
     const effectiveWorldDist = world.pushDir > 0 ? world.worldDistance : 2 * PEAK_DISTANCE - world.worldDistance
     const currentAngle = getAngleAtDistance(effectiveWorldDist)
-    const leanAngle = 20 + currentAngle * 0.8
+    // Lean less than the slope — at steep angles, body leans back significantly
+    // L1 (10°): 18° from vertical → 8° forward from surface normal
+    // L3 (30°): 15° → 15° back from normal
+    // L6 (60°): 10° → 50° back from normal (heavily leaning back)
+    const leanAngle = 20 - currentAngle * 0.17
     const leanRad = leanAngle * Math.PI / 180
 
     const bodyLength = 28
@@ -1927,19 +1931,9 @@ export function useRenderer(deps: RendererDeps) {
     const armDirX = toBoulderDx / toBoulderDist
     const armDirY = toBoulderDy / toBoulderDist
 
-    // Elbow: upper arm along direction with perpendicular bend
+    // Perpendicular to arm direction (for elbow bend)
     const perpX = -armDirY
     const perpY = armDirX
-    const bendAmount = 4 + Math.sin(world.gameTime * 6) * 2
-    const elbowX = shoulderX + armDirX * UPPER_ARM + perpX * bendAmount
-    const elbowY = shoulderY + armDirY * UPPER_ARM + perpY * bendAmount
-
-    // Hand: forearm from elbow aimed toward boulder
-    const eToBoulderDx = localBoulderCenterX - elbowX
-    const eToBoulderDy = localBoulderCenterY - elbowY
-    const eToBoulderDist = Math.sqrt(eToBoulderDx * eToBoulderDx + eToBoulderDy * eToBoulderDy) || 1
-    const handX = elbowX + (eToBoulderDx / eToBoulderDist) * FOREARM
-    const handY = elbowY + (eToBoulderDy / eToBoulderDist) * FOREARM
 
     // Legs
     ctx.beginPath()
@@ -1958,26 +1952,32 @@ export function useRenderer(deps: RendererDeps) {
     ctx.lineTo(shoulderX, shoulderY)
     ctx.stroke()
 
-    // Arms (two arms with slight vertical offset)
-    ctx.beginPath()
-    ctx.moveTo(shoulderX, shoulderY - 3)
-    ctx.lineTo(elbowX, elbowY - 3)
-    ctx.stroke()
+    // Arms — two arms with alternating push/pull motion (frozen during countdown)
+    const armAnimating = gameState.value === 'playing'
+    for (let armIdx = 0; armIdx < 2; armIdx++) {
+      const phaseOffset = armIdx * Math.PI // opposite phase
+      const bendAmount = armAnimating ? Math.max(1, 4 + Math.sin(world.gameTime * 6 + phaseOffset) * 5) : 4
+      const yOffset = armIdx === 0 ? -3 : 3
 
-    ctx.beginPath()
-    ctx.moveTo(shoulderX, shoulderY + 3)
-    ctx.lineTo(elbowX, elbowY + 3)
-    ctx.stroke()
+      const elbowX = shoulderX + armDirX * UPPER_ARM + perpX * bendAmount
+      const elbowY = shoulderY + armDirY * UPPER_ARM + perpY * bendAmount
 
-    ctx.beginPath()
-    ctx.moveTo(elbowX, elbowY - 3)
-    ctx.lineTo(handX, handY - 3)
-    ctx.stroke()
+      const eToBoulderDx = localBoulderCenterX - elbowX
+      const eToBoulderDy = localBoulderCenterY - elbowY
+      const eToBoulderDist = Math.sqrt(eToBoulderDx * eToBoulderDx + eToBoulderDy * eToBoulderDy) || 1
+      const handX = elbowX + (eToBoulderDx / eToBoulderDist) * FOREARM
+      const handY = elbowY + (eToBoulderDy / eToBoulderDist) * FOREARM
 
-    ctx.beginPath()
-    ctx.moveTo(elbowX, elbowY + 3)
-    ctx.lineTo(handX, handY + 3)
-    ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(shoulderX, shoulderY + yOffset)
+      ctx.lineTo(elbowX, elbowY + yOffset)
+      ctx.stroke()
+
+      ctx.beginPath()
+      ctx.moveTo(elbowX, elbowY + yOffset)
+      ctx.lineTo(handX, handY + yOffset)
+      ctx.stroke()
+    }
 
     // Head
     ctx.beginPath()

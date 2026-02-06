@@ -542,9 +542,9 @@ export function useGameLoop(deps: GameLoopDeps) {
               if (dist < 600) play8BitSound('bark')
             }
           } else {
-            // Run away from player
-            const dir = playerWorldX < obs.worldX ? 1 : -1
-            s.dogX = (s.dogX || 0) + dir * 200 * dt
+            // Run ahead of the player (same direction player is pushing)
+            // so the dog stays visible on the hill
+            s.dogX = (s.dogX || 0) + world.pushDir * 200 * dt
           }
           break
         }
