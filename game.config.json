@@ -9,10 +9,8 @@
     { "angle": 60, "width": 5000 }
   ],
   "physics": {
-    "gravityMultiplier": 2.5,
-    "pushMultiplier": 15,
-    "slideMultiplier": 20,
-    "pushDecay": 0.93
+    "constantSpeed": 80,
+    "meterDrainRates": [1.0, 0.75, 0.5, 0.4, 0.3, 0.25]
   },
   "prometheus": {
     "distance": 3500

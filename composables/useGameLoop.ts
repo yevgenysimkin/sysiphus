@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
 import type { GameState } from './useGameState'
-import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, GRAVITY_MULT, PUSH_MULT, SLIDE_MULT, PUSH_DECAY } from './usePhysics'
+import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, CONSTANT_SPEED, METER_DRAIN_RATES } from './usePhysics'
 import { normalThoughts, desperateThoughts } from '~/game/content'
 
 interface GameLoopDeps {
@@ -21,9 +21,7 @@ interface GameLoopDeps {
     boulderDistance: number
     worldScrollX: number
     pushDir: 1 | -1
-    pushPower: number
     lastTapTime: number
-    tapTimes: number[]
     gameTime: number
     lastFrameTime: number
     legPhase: number
@@ -164,28 +162,24 @@ export function useGameLoop(deps: GameLoopDeps) {
   }
 
   function updatePlaying(dt: number) {
-    const now = Date.now()
-    const timeSinceLastTap = (now - world.lastTapTime) / 1000
     const pd = world.pushDir
 
-    world.pushPower *= PUSH_DECAY
+    // Drain meter based on current level
+    const level = currentLevel.value
+    const drainSeconds = METER_DRAIN_RATES[Math.min(level, METER_DRAIN_RATES.length) - 1] || METER_DRAIN_RATES[0]
+    intensity.value -= (100 / drainSeconds) * dt
 
-    const currentAngle = getAngleAtDistance(effectiveDist())
-    const requiredForce = Math.sin(currentAngle * Math.PI / 180) * GRAVITY_MULT
-    const netForce = world.pushPower - requiredForce
-
-    if (netForce > 0) {
-      const moveAmount = netForce * dt * PUSH_MULT
-      world.boulderDistance += moveAmount * pd
-      world.worldDistance = world.boulderDistance - 40 * pd
-      score.value += netForce * dt * 10
-      displayScore.value = score.value
-    } else {
-      world.boulderDistance += netForce * dt * SLIDE_MULT * pd
-      clampToBottom()
-      world.worldDistance = world.boulderDistance - 40 * pd
-      if (Math.random() > 0.85) play8BitSound('slip')
+    if (intensity.value <= 0) {
+      intensity.value = 0
+      startCrushing()
+      return
     }
+
+    // Constant speed movement
+    world.boulderDistance += CONSTANT_SPEED * dt * pd
+    world.worldDistance = world.boulderDistance - 40 * pd
+    score.value += CONSTANT_SPEED * dt * 0.125
+    displayScore.value = score.value
 
     const canvas = gameCanvas.value
     const screenWidth = canvas?.width || 800
@@ -200,14 +194,6 @@ export function useGameLoop(deps: GameLoopDeps) {
       }
       currentLevel.value = newLevel
       displayLevel.value = newLevel
-    }
-
-    const pushRatio = world.pushPower / (requiredForce + 0.2)
-    intensity.value = Math.min(100, Math.max(0, pushRatio * 50))
-
-    if (timeSinceLastTap > 1.2 && world.pushPower < 0.15) {
-      startCrushing()
-      return
     }
 
     if ((world.boulderDistance - PEAK_DISTANCE) * pd >= 0) {
@@ -398,7 +384,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
 
       world.boulderVelocity = 0
-      world.pushPower = 0.5
+      intensity.value = 50
       world.lastTapTime = Date.now()
       score.value = 0
       displayScore.value = 0
@@ -430,9 +416,10 @@ export function useGameLoop(deps: GameLoopDeps) {
     world.gameTime += dt
     world.breathPhase += dt * 3
 
-    if (world.pushPower > 0.3 && gameState.value === 'playing') {
-      world.legPhase += dt * world.pushPower * 10
-      if (world.gameTime - world.lastFootstepTime > 0.2 / Math.max(0.5, world.pushPower)) {
+    if (gameState.value === 'playing') {
+      world.legPhase += dt * 8
+      world.boulderRotation += dt * (CONSTANT_SPEED / 26) * world.pushDir
+      if (world.gameTime - world.lastFootstepTime > 0.25) {
         play8BitSound('footstep')
         world.lastFootstepTime = world.gameTime
       }
@@ -443,10 +430,6 @@ export function useGameLoop(deps: GameLoopDeps) {
     }
 
     world.armPhase *= 0.88
-
-    if (gameState.value === 'playing' && world.pushPower > 0.3) {
-      world.boulderRotation += dt * world.pushPower * 2.5
-    }
 
     if (world.currentThought && gameState.value === 'playing') {
       world.currentThought.fadeIn = Math.min(1, world.currentThought.fadeIn + dt * 3)

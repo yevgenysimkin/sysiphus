@@ -19,7 +19,6 @@ interface RendererDeps {
     boulderDistance: number
     worldScrollX: number
     pushDir: 1 | -1
-    pushPower: number
     gameTime: number
     legPhase: number
     armPhase: number
@@ -1150,7 +1149,7 @@ export function useRenderer(deps: RendererDeps) {
     ctx.stroke()
 
     // Effort lines
-    if (world.pushPower > 1) {
+    if (world.armPhase > 0.1) {
       ctx.lineWidth = 1
       ctx.strokeStyle = '#fff'
       for (let i = 0; i < 3; i++) {

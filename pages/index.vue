@@ -74,7 +74,7 @@ const {
 
 const { getLevelAtDistance, getAngleAtDistance, getHeightAtWorldDistance, getHillYAtScreenX } = usePhysics()
 const { initAudio, play8BitSound, closeAudio } = useAudio()
-const { handleClick, handleKeyDown, registerTap } = useInput(gameState, world)
+const { handleClick, handleKeyDown, registerTap } = useInput(gameState, intensity, world)
 
 const { initCanvas, resizeCanvas, render } = useRenderer({
   gameCanvas,

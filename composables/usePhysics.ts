@@ -14,10 +14,8 @@ for (const level of gameConfig.levels) {
 export const PEAK_DISTANCE = runningDistance
 
 // Physics constants from config
-export const GRAVITY_MULT = gameConfig.physics.gravityMultiplier
-export const PUSH_MULT = gameConfig.physics.pushMultiplier
-export const SLIDE_MULT = gameConfig.physics.slideMultiplier
-export const PUSH_DECAY = gameConfig.physics.pushDecay
+export const CONSTANT_SPEED = gameConfig.physics.constantSpeed
+export const METER_DRAIN_RATES = gameConfig.physics.meterDrainRates
 
 // Camera constants
 export const PLAYER_SCREEN_X_RATIO = 1 / 3

@@ -4,17 +4,14 @@ import { useAudio } from './useAudio'
 
 export function useInput(
   gameState: Ref<GameState>,
-  world: { pushPower: number; lastTapTime: number; tapTimes: number[]; armPhase: number },
+  intensity: Ref<number>,
+  world: { lastTapTime: number; armPhase: number },
 ) {
   const { initAudio, play8BitSound } = useAudio()
 
   function registerTap() {
-    const now = Date.now()
-    world.tapTimes.push(now)
-    world.tapTimes = world.tapTimes.filter(t => now - t < 2000)
-    const tapsPerSecond = world.tapTimes.length / 2
-    world.pushPower += 0.5 + (tapsPerSecond * 0.2)
-    world.lastTapTime = now
+    intensity.value = 100
+    world.lastTapTime = Date.now()
     world.armPhase = Math.PI * 0.4
     play8BitSound('push')
   }

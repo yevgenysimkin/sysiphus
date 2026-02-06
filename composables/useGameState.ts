@@ -52,9 +52,7 @@ export function useGameState() {
     worldDistance: 0,
     boulderDistance: 0,
     worldScrollX: 0,
-    pushPower: 0,
     lastTapTime: 0,
-    tapTimes: [] as number[],
     gameTime: 0,
     lastFrameTime: 0,
 
@@ -163,9 +161,7 @@ export function useGameState() {
     } else {
       world.pushDir = 1
     }
-    world.pushPower = 0
     world.lastTapTime = Date.now()
-    world.tapTimes = []
     world.gameTime = 0
     currentLevel.value = 1
     displayLevel.value = 1
