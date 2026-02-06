@@ -21,8 +21,12 @@ export const METER_DRAIN_RATES = gameConfig.physics.meterDrainRates
 export const PLAYER_SCREEN_X_RATIO = 1 / 3
 export const GROUND_SCREEN_Y_OFFSET = 100
 
-// Prometheus
-export const prometheusConfigDistance = gameConfig.prometheus.distance
+// Prometheus — compute world distance from level + positionInLevel
+const promLevel = gameConfig.prometheus.level
+const promLevelStart = LEVEL_DISTANCES[promLevel - 1]
+const promLevelWidth = gameConfig.levels[promLevel - 1].width
+export const prometheusConfigDistance = promLevelStart + promLevelWidth * gameConfig.prometheus.positionInLevel
+export const prometheusProximity = gameConfig.prometheus.proximity
 
 export function usePhysics() {
   function getLevelAtDistance(dist: number): number {

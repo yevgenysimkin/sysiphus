@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
-import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, prometheusConfigDistance } from './usePhysics'
+import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, prometheusConfigDistance, prometheusProximity } from './usePhysics'
+import dialogue from '~/game.dialogue.json'
 import { boulderExclamations, sisyphusExclamations, sassyComments, finalThoughts } from '~/game/content'
 
 export type GameState = 'start' | 'playing' | 'countdown' | 'crushing' | 'rolling_back' | 'rolling_over' | 'continue_prompt' | 'getting_up' | 'final_thought' | 'credits' | 'gameover'
@@ -118,7 +119,11 @@ export function useGameState() {
     grass: [] as GrassTuft[],
     landmarks: [] as Landmark[],
     prometheusDistance: prometheusConfigDistance,
+    prometheusProximity: prometheusProximity,
     prometheusGreeted: false,
+    prometheusDialogueIndex: 0,
+    prometheusNextExchange: 0,
+    prometheusActiveExchange: null as { speaker: string; text: string; timer: number; fadeIn: number } | null,
     spaceshipX: -200,
     spaceshipY: 100,
     spaceshipActive: false,
@@ -181,6 +186,9 @@ export function useGameState() {
     world.reachedPeak = false
     world.spaceshipActive = false
     world.prometheusGreeted = false
+    world.prometheusDialogueIndex = Math.floor(Math.random() * dialogue.prometheusDialogues.length)
+    world.prometheusNextExchange = 0
+    world.prometheusActiveExchange = null
     world.sisyphusTumbleRotation = 0
     world.sisyphusTumbleX = 0
     world.sisyphusFallen = false

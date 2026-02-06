@@ -60,6 +60,12 @@ interface GameLoopDeps {
     lastRollSoundTime: number
     birds: { x: number; y: number; vx: number; vy: number; flapPhase: number }[]
     clouds: { x: number; y: number; speed: number; size: number }[]
+    prometheusDistance: number
+    prometheusProximity: number
+    prometheusGreeted: boolean
+    prometheusDialogueIndex: number
+    prometheusNextExchange: number
+    prometheusActiveExchange: { speaker: string; text: string; timer: number; fadeIn: number } | null
     spaceshipX: number
     spaceshipY: number
     spaceshipActive: boolean
@@ -115,6 +121,8 @@ export function useGameLoop(deps: GameLoopDeps) {
 
   function checkLevelPhrase() {
     if (world.currentThought) return
+    // Suppress level phrases during Prometheus dialogue
+    if (world.prometheusActiveExchange) return
 
     const level = currentLevel.value
     const phrases = (dialogue.levelPhrases as Record<string, string[]>)[String(level)]
@@ -143,6 +151,42 @@ export function useGameLoop(deps: GameLoopDeps) {
         world.lastThoughtTime = world.gameTime
         return
       }
+    }
+  }
+
+  function checkPrometheusDialogue() {
+    const eDist = effectiveDist()
+    const distTo = eDist - world.prometheusDistance
+
+    // Trigger greeting when within proximity
+    if (!world.prometheusGreeted && Math.abs(distTo) < world.prometheusProximity && gameState.value === 'playing') {
+      world.prometheusGreeted = true
+    }
+
+    if (!world.prometheusGreeted) return
+
+    // Advance through exchanges based on distance past Prometheus
+    const dialogueSet = dialogue.prometheusDialogues[world.prometheusDialogueIndex]
+    if (!dialogueSet || world.prometheusNextExchange >= dialogueSet.exchanges.length) return
+
+    const nextExchange = dialogueSet.exchanges[world.prometheusNextExchange]
+    if (distTo >= nextExchange.delay) {
+      world.prometheusActiveExchange = {
+        speaker: nextExchange.speaker,
+        text: nextExchange.text,
+        timer: 3.5,
+        fadeIn: 0
+      }
+      world.prometheusNextExchange++
+    }
+  }
+
+  function updatePrometheusExchange(dt: number) {
+    if (!world.prometheusActiveExchange) return
+    world.prometheusActiveExchange.fadeIn = Math.min(1, world.prometheusActiveExchange.fadeIn + dt * 3)
+    world.prometheusActiveExchange.timer -= dt
+    if (world.prometheusActiveExchange.timer <= 0) {
+      world.prometheusActiveExchange = null
     }
   }
 
@@ -221,6 +265,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       return
     }
 
+    checkPrometheusDialogue()
     checkLevelPhrase()
     maybeSpawnEvents()
   }
@@ -450,6 +495,8 @@ export function useGameLoop(deps: GameLoopDeps) {
     }
 
     world.armPhase *= 0.88
+
+    updatePrometheusExchange(dt)
 
     if (world.currentThought && gameState.value === 'playing') {
       world.currentThought.fadeIn = Math.min(1, world.currentThought.fadeIn + dt * 3)

@@ -52,6 +52,7 @@ interface RendererDeps {
     landmarks: Landmark[]
     prometheusDistance: number
     prometheusGreeted: boolean
+    prometheusActiveExchange: { speaker: string; text: string; timer: number; fadeIn: number } | null
     spaceshipX: number
     spaceshipY: number
     spaceshipActive: boolean
@@ -486,13 +487,25 @@ export function useRenderer(deps: RendererDeps) {
     const embedY = groundY + 25
     const scale = 1.5
 
-    // Rock
+    // Rock (organic bezier shape)
     ctx.fillStyle = '#555'
     ctx.beginPath()
-    ctx.moveTo(embedX - 40 * scale, groundY)
-    ctx.lineTo(embedX + 30 * scale, groundY - 10)
-    ctx.lineTo(embedX + 40 * scale, embedY + 25 * scale)
-    ctx.lineTo(embedX - 30 * scale, embedY + 35 * scale)
+    ctx.moveTo(embedX - 40 * scale, groundY + 5)
+    ctx.bezierCurveTo(
+      embedX - 45 * scale, groundY - 20,
+      embedX - 10 * scale, groundY - 25,
+      embedX + 30 * scale, groundY - 10
+    )
+    ctx.bezierCurveTo(
+      embedX + 45 * scale, groundY,
+      embedX + 42 * scale, embedY + 20 * scale,
+      embedX + 30 * scale, embedY + 30 * scale
+    )
+    ctx.bezierCurveTo(
+      embedX + 10 * scale, embedY + 40 * scale,
+      embedX - 25 * scale, embedY + 38 * scale,
+      embedX - 40 * scale, groundY + 5
+    )
     ctx.closePath()
     ctx.fill()
     ctx.strokeStyle = '#777'
@@ -591,16 +604,22 @@ export function useRenderer(deps: RendererDeps) {
     ctx.fillText(ouchTexts[ouchPhase], embedX - 45, embedY - 25 * scale)
     ctx.globalAlpha = 1
 
-    // Greeting
-    const sisyphusNearby = Math.abs(world.boulderDistance - world.prometheusDistance) < 80
-    if (sisyphusNearby && !world.prometheusGreeted && gameState.value === 'playing') {
-      world.prometheusGreeted = true
-    }
-
-    if (world.prometheusGreeted && world.boulderDistance > world.prometheusDistance && world.boulderDistance < world.prometheusDistance + 200) {
-      drawBubble(embedX, embedY - 15 * scale, "Hey pal... hope you're taking care of yourself!", 'speech', {
-        font: '10px monospace', maxWidth: 140, offsetX: -60, offsetY: -40
-      })
+    // Dialogue exchange
+    if (world.prometheusActiveExchange) {
+      const ex = world.prometheusActiveExchange
+      const alpha = ex.timer < 0.5 ? ex.timer * 2 : ex.fadeIn
+      if (ex.speaker === 'prometheus') {
+        drawBubble(embedX, embedY - 15 * scale, ex.text, 'speech', {
+          alpha, font: '10px monospace', maxWidth: 150, offsetX: -60, offsetY: -40
+        })
+      } else {
+        // Sisyphus speech — draw near the player position
+        const playerScreenX = world.worldDistance - world.worldScrollX
+        const playerY = hillY(playerScreenX, height) - 50
+        drawBubble(playerScreenX, playerY, ex.text, 'speech', {
+          alpha, font: '10px monospace', maxWidth: 150, offsetX: 20, offsetY: -30
+        })
+      }
     }
 
     ctx.fillStyle = '#666'

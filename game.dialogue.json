@@ -30,5 +30,35 @@
       "I can taste the summit!",
       "One must imagine Sisyphus happy... right?"
     ]
-  }
+  },
+  "prometheusDialogues": [
+    {
+      "exchanges": [
+        { "speaker": "prometheus", "text": "Hey Sisyphus! Looking strong today!", "delay": 0 },
+        { "speaker": "sisyphus", "text": "Thanks... *huff*... you too...", "delay": 60 },
+        { "speaker": "prometheus", "text": "Eagle's on lunch break! Small victories!", "delay": 120 }
+      ]
+    },
+    {
+      "exchanges": [
+        { "speaker": "prometheus", "text": "Still at it, huh?", "delay": 0 },
+        { "speaker": "sisyphus", "text": "Do I have a choice?", "delay": 60 },
+        { "speaker": "prometheus", "text": "Fair point. At least we're suffering together!", "delay": 120 }
+      ]
+    },
+    {
+      "exchanges": [
+        { "speaker": "prometheus", "text": "You know what I miss? Fire.", "delay": 0 },
+        { "speaker": "sisyphus", "text": "You know what I miss? Flat ground.", "delay": 60 },
+        { "speaker": "prometheus", "text": "Ha! We should start a support group.", "delay": 120 }
+      ]
+    },
+    {
+      "exchanges": [
+        { "speaker": "prometheus", "text": "Hey! Watch out for that steep bit ahead!", "delay": 0 },
+        { "speaker": "sisyphus", "text": "It's ALL steep bits!", "delay": 60 },
+        { "speaker": "prometheus", "text": "Good point. Godspeed, friend!", "delay": 120 }
+      ]
+    }
+  ]
 }
