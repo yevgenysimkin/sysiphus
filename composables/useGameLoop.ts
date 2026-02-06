@@ -392,7 +392,7 @@ export function useGameLoop(deps: GameLoopDeps) {
         triggerSisyphusExclamation()
       }
     } else if (!world.sisyphusFallen) {
-      world.sisyphusTumbleRotation += world.boulderVelocity * dt * 0.05
+      world.sisyphusTumbleRotation += Math.PI * 4 * dt  // 2 rotations per second
       world.sisyphusTumbleX = -70 * pd - Math.sin(world.sisyphusTumbleRotation) * 10 * pd
     }
 

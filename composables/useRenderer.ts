@@ -1165,7 +1165,15 @@ export function useRenderer(deps: RendererDeps) {
       return
     }
 
-    // Normal pushing state — mirror when pushDir < 0
+    // Normal pushing state
+
+    // Adjust feet position for consistent hip-to-boulder distance on steep slopes
+    // At steeper angles, reduce horizontal gap so character stays close to boulder
+    const renderGap = 40 * Math.max(0.25, Math.pow(Math.cos(slopeAngle), 1.5))
+    feetScreenX = boulderScreenX - renderGap * world.pushDir
+    const renderFeetY = hillY(feetScreenX, height)
+
+    // Mirror when pushDir < 0
     ctx.save()
     ctx.translate(feetScreenX, 0)
     ctx.scale(world.pushDir, 1)
@@ -1173,7 +1181,7 @@ export function useRenderer(deps: RendererDeps) {
 
     const effectiveWorldDist = world.pushDir > 0 ? world.worldDistance : 2 * PEAK_DISTANCE - world.worldDistance
     const currentAngle = getAngleAtDistance(effectiveWorldDist)
-    const leanAngle = 35 + (currentAngle * 0.3)
+    const leanAngle = 20 + currentAngle * 0.8
     const leanRad = leanAngle * Math.PI / 180
 
     const bodyLength = 28
@@ -1185,10 +1193,10 @@ export function useRenderer(deps: RendererDeps) {
     const legCycle = Math.sin(world.legPhase)
     const footBackX = feetScreenX - 10 - Math.abs(legCycle) * 8
     const footFrontX = feetScreenX + 8 + Math.abs(Math.sin(world.legPhase + Math.PI)) * 6
-    const footY = feetY
+    const footY = renderFeetY
 
     const hipX = feetScreenX
-    const hipY = feetY - 18
+    const hipY = renderFeetY - 18
 
     const shoulderX = hipX + Math.sin(leanRad) * bodyLength
     const shoulderY = hipY - Math.cos(leanRad) * bodyLength + breathing
@@ -1198,22 +1206,32 @@ export function useRenderer(deps: RendererDeps) {
     const headX = shoulderX + 2 + headBob
     const headY = shoulderY - headRadius - 4 + breathing
 
-    // Compute boulder center in local (mirrored) coordinate space
+    // Boulder center in local (mirrored) coordinate space
     const localBoulderCenterX = feetScreenX + (boulderX - feetScreenX) * world.pushDir
     const localBoulderCenterY = boulderY
 
-    // Hands target the near surface of the boulder
-    const armPushOffset = world.armPhase * 4
-    const handTargetX = localBoulderCenterX - boulderRadius + armPushOffset
-    const handTargetY = localBoulderCenterY
+    // Fixed-length arms aimed toward boulder center
+    const UPPER_ARM = 14
+    const FOREARM = 14
+    const toBoulderDx = localBoulderCenterX - shoulderX
+    const toBoulderDy = localBoulderCenterY - shoulderY
+    const toBoulderDist = Math.sqrt(toBoulderDx * toBoulderDx + toBoulderDy * toBoulderDy) || 1
+    const armDirX = toBoulderDx / toBoulderDist
+    const armDirY = toBoulderDy / toBoulderDist
 
-    // Elbow: midpoint between shoulder and hand with slight outward bend
-    const elbowX = (shoulderX + handTargetX) / 2
-    const elbowBaseY = (shoulderY + handTargetY) / 2 - 5
-    const elbowY = elbowBaseY + Math.sin(world.gameTime * 6) * 2
+    // Elbow: upper arm along direction with perpendicular bend
+    const perpX = -armDirY
+    const perpY = armDirX
+    const bendAmount = 4 + Math.sin(world.gameTime * 6) * 2
+    const elbowX = shoulderX + armDirX * UPPER_ARM + perpX * bendAmount
+    const elbowY = shoulderY + armDirY * UPPER_ARM + perpY * bendAmount
 
-    const handX = handTargetX
-    const handY = handTargetY + Math.sin(world.gameTime * 6 + 0.5) * 3
+    // Hand: forearm from elbow aimed toward boulder
+    const eToBoulderDx = localBoulderCenterX - elbowX
+    const eToBoulderDy = localBoulderCenterY - elbowY
+    const eToBoulderDist = Math.sqrt(eToBoulderDx * eToBoulderDx + eToBoulderDy * eToBoulderDy) || 1
+    const handX = elbowX + (eToBoulderDx / eToBoulderDist) * FOREARM
+    const handY = elbowY + (eToBoulderDy / eToBoulderDist) * FOREARM
 
     // Legs
     ctx.beginPath()
@@ -1232,25 +1250,25 @@ export function useRenderer(deps: RendererDeps) {
     ctx.lineTo(shoulderX, shoulderY)
     ctx.stroke()
 
-    // Arms
+    // Arms (two arms with slight vertical offset)
     ctx.beginPath()
     ctx.moveTo(shoulderX, shoulderY - 3)
-    ctx.lineTo(elbowX, elbowY - 4)
+    ctx.lineTo(elbowX, elbowY - 3)
     ctx.stroke()
 
     ctx.beginPath()
     ctx.moveTo(shoulderX, shoulderY + 3)
-    ctx.lineTo(elbowX, elbowY + 4)
+    ctx.lineTo(elbowX, elbowY + 3)
     ctx.stroke()
 
     ctx.beginPath()
-    ctx.moveTo(elbowX, elbowY - 4)
-    ctx.lineTo(handX, handY - 4)
+    ctx.moveTo(elbowX, elbowY - 3)
+    ctx.lineTo(handX, handY - 3)
     ctx.stroke()
 
     ctx.beginPath()
-    ctx.moveTo(elbowX, elbowY + 4)
-    ctx.lineTo(handX, handY + 4)
+    ctx.moveTo(elbowX, elbowY + 3)
+    ctx.lineTo(handX, handY + 3)
     ctx.stroke()
 
     // Head
