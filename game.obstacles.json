@@ -1,0 +1,19 @@
+[
+  { "type": "souvlaki", "level": 1, "positionInLevel": 0.38 },
+  { "type": "stray_dog", "level": 1, "positionInLevel": 0.25, "triggerProximity": 200 },
+  { "type": "campfire", "level": 1, "positionInLevel": 0.55 },
+  { "type": "sign", "level": 2, "positionInLevel": 0.2 },
+  { "type": "sasquatch", "level": 2, "positionInLevel": 0.5, "triggerProximity": 250 },
+  { "type": "bench", "level": 2, "positionInLevel": 0.8 },
+  { "type": "rock", "level": 3, "positionInLevel": 0.2 },
+  { "type": "ancient_ruins", "level": 3, "positionInLevel": 0.45 },
+  { "type": "attack_birds", "level": 3, "positionInLevel": 0.75, "triggerProximity": 200 },
+  { "type": "sign", "level": 4, "positionInLevel": 0.15 },
+  { "type": "philosopher", "level": 4, "positionInLevel": 0.5 },
+  { "type": "storm_cloud", "level": 4, "positionInLevel": 0.8, "triggerProximity": 150 },
+  { "type": "mountain_goat", "level": 5, "positionInLevel": 0.35 },
+  { "type": "alien_laser", "level": 5, "positionInLevel": 0.65, "triggerProximity": 200 },
+  { "type": "souvlaki", "level": 5, "positionInLevel": 0.9 },
+  { "type": "avalanche_warning", "level": 6, "positionInLevel": 0.3 },
+  { "type": "the_muses", "level": 6, "positionInLevel": 0.7 }
+]

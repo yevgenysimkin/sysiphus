@@ -29,6 +29,13 @@ export const sassyComments = [
   "My therapist is going to hear about this.",
 ]
 
+export const philosopherThoughts = [
+  "The unexamined life is not worth living",
+  "I know that I know nothing",
+  "One must imagine Sisyphus happy",
+  "Man is the measure of all things"
+]
+
 export const castList = [
   { role: 'Sisyphus', actor: 'Stick Figure' },
   { role: 'The Boulder', actor: 'Stick Circle' },
@@ -40,6 +47,11 @@ export const castList = [
   { role: 'The Hill', actor: 'An Unreasonable Incline' },
   { role: 'Prometheus', actor: 'That Other Guy' },
   { role: 'The Moon', actor: 'Definitely Not Cheese' },
+  { role: 'Stray Dog', actor: 'A Good Boy (Allegedly)' },
+  { role: 'Sasquatch', actor: 'Unconfirmed' },
+  { role: 'Socrates', actor: 'Himself (Method Acting)' },
+  { role: 'Mountain Goat', actor: 'Judgmental Ruminant' },
+  { role: 'The Muses', actor: 'Mean Girls of Olympus' },
   { role: 'UFO Pilot', actor: 'Classified' },
   { role: 'Hope', actor: 'Not Appearing In This Game' },
   { role: 'The Top of the Hill', actor: 'Also Not Appearing' },

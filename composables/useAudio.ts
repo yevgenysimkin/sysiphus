@@ -1,4 +1,4 @@
-type SoundType = 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup'
+type SoundType = 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup' | 'bark' | 'thunder' | 'laser'
 
 let audioCtx: AudioContext | null = null
 
@@ -80,6 +80,35 @@ export function useAudio() {
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4)
         osc.start(now)
         osc.stop(now + 0.4)
+        break
+      case 'bark':
+        osc.type = 'square'
+        osc.frequency.setValueAtTime(300, now)
+        osc.frequency.setValueAtTime(450, now + 0.05)
+        osc.frequency.exponentialRampToValueAtTime(200, now + 0.12)
+        gain.gain.setValueAtTime(0.1, now)
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12)
+        osc.start(now)
+        osc.stop(now + 0.12)
+        break
+      case 'thunder':
+        osc.type = 'sawtooth'
+        osc.frequency.setValueAtTime(80, now)
+        osc.frequency.exponentialRampToValueAtTime(20, now + 0.6)
+        gain.gain.setValueAtTime(0.2, now)
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6)
+        osc.start(now)
+        osc.stop(now + 0.6)
+        break
+      case 'laser':
+        osc.type = 'sawtooth'
+        osc.frequency.setValueAtTime(800, now)
+        osc.frequency.exponentialRampToValueAtTime(200, now + 0.3)
+        osc.frequency.exponentialRampToValueAtTime(600, now + 0.5)
+        gain.gain.setValueAtTime(0.1, now)
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5)
+        osc.start(now)
+        osc.stop(now + 0.5)
         break
     }
   }

@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
-import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, prometheusConfigDistance, prometheusProximity } from './usePhysics'
+import { PEAK_DISTANCE, LEVEL_DISTANCES, PLAYER_SCREEN_X_RATIO, prometheusConfigDistance, prometheusProximity } from './usePhysics'
 import dialogue from '~/game.dialogue.json'
+import obstacleConfig from '~/game.obstacles.json'
 import { boulderExclamations, sisyphusExclamations, sassyComments, finalThoughts } from '~/game/content'
 
 export type GameState = 'start' | 'playing' | 'countdown' | 'crushing' | 'rolling_back' | 'rolling_over' | 'continue_prompt' | 'getting_up' | 'final_thought' | 'credits' | 'gameover'
@@ -10,7 +11,116 @@ export interface Bird { x: number; y: number; vx: number; vy: number; flapPhase:
 export interface Cloud { x: number; y: number; speed: number; size: number }
 export interface Tree { worldX: number; size: number; type: 'pine' | 'oak' | 'dead' }
 export interface GrassTuft { worldX: number; height: number; blades: number }
-export interface Landmark { worldX: number; type: 'souvlaki' | 'sign' | 'rock' | 'bench' }
+
+export type ObstacleType =
+  | 'souvlaki' | 'sign' | 'rock' | 'bench'
+  | 'stray_dog' | 'campfire' | 'sasquatch'
+  | 'ancient_ruins' | 'attack_birds'
+  | 'philosopher' | 'storm_cloud'
+  | 'mountain_goat' | 'alien_laser'
+  | 'avalanche_warning' | 'the_muses'
+
+export interface SmokeParticle { x: number; y: number; vy: number; alpha: number; size: number }
+export interface AttackBird { x: number; y: number; vx: number; vy: number; phase: number }
+export interface Raindrop { x: number; y: number; speed: number }
+export interface FallingRock { x: number; y: number; vy: number; size: number; rotation: number }
+
+export interface ObstacleState {
+  animTimer: number
+  // Stray Dog
+  dogFled?: boolean
+  dogX?: number
+  dogBarkTimer?: number
+  // Campfire
+  smokeParticles?: SmokeParticle[]
+  // Sasquatch
+  squatchPeekAmount?: number
+  squatchHiding?: boolean
+  // Attack Birds
+  attackBirds?: AttackBird[]
+  triggered?: boolean
+  triggerComplete?: boolean
+  triggerTimer?: number
+  // Storm Cloud
+  raindrops?: Raindrop[]
+  lightningTimer?: number
+  lightningFlash?: number
+  // Alien Laser
+  ufoX?: number
+  ufoY?: number
+  laserAngle?: number
+  laserActive?: boolean
+  // Mountain Goat
+  blinkTimer?: number
+  blinking?: boolean
+  // Avalanche Warning
+  fallingRocks?: FallingRock[]
+  // The Muses
+  laughPhase?: number
+  // Philosopher
+  thoughtIndex?: number
+  thoughtTimer?: number
+}
+
+export interface Obstacle {
+  worldX: number
+  type: ObstacleType
+  triggerProximity?: number
+  state: ObstacleState
+}
+
+// Keep Landmark as alias for backward compat in imports
+export type Landmark = Obstacle
+
+function computeObstacleWorldX(level: number, positionInLevel: number): number {
+  const levelStart = LEVEL_DISTANCES[level - 1]
+  const levelEnd = level < LEVEL_DISTANCES.length ? LEVEL_DISTANCES[level] : PEAK_DISTANCE
+  const levelWidth = levelEnd - levelStart
+  return levelStart + levelWidth * positionInLevel
+}
+
+function initObstacleState(type: ObstacleType): ObstacleState {
+  const base: ObstacleState = { animTimer: 0 }
+  switch (type) {
+    case 'stray_dog':
+      return { ...base, dogFled: false, dogX: 0, dogBarkTimer: 2 + Math.random() * 3 }
+    case 'campfire':
+      return { ...base, smokeParticles: [] }
+    case 'sasquatch':
+      return { ...base, squatchPeekAmount: 0.8, squatchHiding: false }
+    case 'attack_birds':
+      return { ...base, attackBirds: [], triggered: false, triggerComplete: false, triggerTimer: 0 }
+    case 'storm_cloud':
+      return { ...base, raindrops: [], lightningTimer: 0, lightningFlash: 0, triggered: false, triggerComplete: false, triggerTimer: 0 }
+    case 'alien_laser':
+      return { ...base, ufoX: 0, ufoY: 80, laserAngle: 0, laserActive: false, triggered: false, triggerComplete: false, triggerTimer: 0 }
+    case 'mountain_goat':
+      return { ...base, blinkTimer: 3 + Math.random() * 4, blinking: false }
+    case 'avalanche_warning':
+      return { ...base, fallingRocks: [] }
+    case 'the_muses':
+      return { ...base, laughPhase: 0 }
+    case 'philosopher':
+      return { ...base, thoughtIndex: 0, thoughtTimer: 0 }
+    default:
+      return base
+  }
+}
+
+function buildObstacles(): Obstacle[] {
+  const obstacles: Obstacle[] = []
+  for (const entry of obstacleConfig) {
+    const worldX = computeObstacleWorldX(entry.level, entry.positionInLevel)
+    const mirrorX = 2 * PEAK_DISTANCE - worldX
+    const base = {
+      type: entry.type as ObstacleType,
+      triggerProximity: (entry as any).triggerProximity,
+    }
+    obstacles.push({ ...base, worldX, state: initObstacleState(base.type) })
+    obstacles.push({ ...base, worldX: mirrorX, state: initObstacleState(base.type) })
+  }
+  return obstacles
+}
 
 export function useGameState() {
   // Core reactive state
@@ -114,7 +224,7 @@ export function useGameState() {
     clouds: [] as Cloud[],
     trees: [] as Tree[],
     grass: [] as GrassTuft[],
-    landmarks: [] as Landmark[],
+    obstacles: [] as Obstacle[],
     prometheusDistance: prometheusConfigDistance,
     prometheusProximity: prometheusProximity,
     prometheusGreeted: false,
@@ -229,21 +339,8 @@ export function useGameState() {
       })
     }
 
-    world.landmarks = [
-      { worldX: 2000, type: 'souvlaki' },
-      { worldX: 5000, type: 'sign' },
-      { worldX: 8000, type: 'bench' },
-      { worldX: 12000, type: 'rock' },
-      { worldX: 18000, type: 'sign' },
-      { worldX: 25000, type: 'souvlaki' },
-      // Mirrored side
-      { worldX: 2 * PEAK_DISTANCE - 2000, type: 'souvlaki' },
-      { worldX: 2 * PEAK_DISTANCE - 5000, type: 'sign' },
-      { worldX: 2 * PEAK_DISTANCE - 8000, type: 'bench' },
-      { worldX: 2 * PEAK_DISTANCE - 12000, type: 'rock' },
-      { worldX: 2 * PEAK_DISTANCE - 18000, type: 'sign' },
-      { worldX: 2 * PEAK_DISTANCE - 25000, type: 'souvlaki' },
-    ]
+    // Config-driven obstacles (replaces hardcoded landmarks)
+    world.obstacles = buildObstacles()
 
     world.birds = []
   }
