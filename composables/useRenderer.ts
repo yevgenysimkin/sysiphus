@@ -192,16 +192,18 @@ export function useRenderer(deps: RendererDeps) {
     ctx.restore()
   }
 
-  function drawStars(width: number, height: number) {
+  function drawStars(width: number, height: number, altitude: number) {
     if (!ctx) return
+    const altBrightness = Math.min(1, altitude / 2500)
+    const starCount = 100 + Math.floor(altBrightness * 80)
     ctx.fillStyle = '#ffffff'
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < starCount; i++) {
       const x = ((Math.sin(i * 123.456) * 0.5 + 0.5) * width * 2 - world.worldScrollX * 0.02) % width
-      const y = (Math.cos(i * 789.012) * 0.5 + 0.5) * height * 0.5
+      const y = (Math.cos(i * 789.012) * 0.5 + 0.5) * height * 0.55
       const twinkle = Math.sin(world.gameTime * 2 + i) * 0.5 + 0.5
-      ctx.globalAlpha = 0.3 + twinkle * 0.7
+      ctx.globalAlpha = (0.2 + altBrightness * 0.4) + twinkle * (0.4 + altBrightness * 0.3)
       ctx.beginPath()
-      ctx.arc(x, y, twinkle * 1.5 + 0.5, 0, Math.PI * 2)
+      ctx.arc(x, y, twinkle * 1.5 + 0.5 + altBrightness * 0.5, 0, Math.PI * 2)
       ctx.fill()
     }
     ctx.globalAlpha = 1
@@ -229,47 +231,83 @@ export function useRenderer(deps: RendererDeps) {
   function drawParallaxBackground(width: number, height: number, altitude: number) {
     if (!ctx) return
 
+    // Aurora/glow at high altitude
+    if (altitude > 2000) {
+      const auroraAlpha = Math.min(0.15, (altitude - 2000) / 5000)
+      const glow = ctx.createLinearGradient(0, 0, width, height * 0.3)
+      glow.addColorStop(0, `rgba(80, 40, 120, ${auroraAlpha})`)
+      glow.addColorStop(0.3, `rgba(40, 100, 80, ${auroraAlpha * 0.7})`)
+      glow.addColorStop(0.6, `rgba(80, 60, 140, ${auroraAlpha * 0.5})`)
+      glow.addColorStop(1, `rgba(40, 80, 100, ${auroraAlpha * 0.3})`)
+      ctx.fillStyle = glow
+      ctx.fillRect(0, 0, width, height * 0.35)
+    }
+
+    // Distant mountains — rich purple/blue, vertical parallax
     if (altitude > 1500) {
-      const mountainAlpha = Math.min(0.4, (altitude - 1500) / 3000)
-      ctx.fillStyle = `rgba(60, 60, 80, ${mountainAlpha})`
+      const mountainAlpha = Math.min(0.45, (altitude - 1500) / 2500)
+      const vertShift = altitude * 0.015
+      ctx.fillStyle = `rgba(50, 40, 80, ${mountainAlpha})`
       ctx.beginPath()
-      ctx.moveTo(0, height * 0.6)
+      ctx.moveTo(0, height * 0.6 + vertShift)
       for (let x = 0; x < width; x += 50) {
         const peakHeight = Math.sin(x * 0.01 + world.worldScrollX * 0.0001) * 80 +
-                           Math.sin(x * 0.02) * 40
-        ctx.lineTo(x, height * 0.5 - peakHeight)
+                           Math.sin(x * 0.02) * 40 +
+                           Math.sin(x * 0.005 + 1) * 50
+        ctx.lineTo(x, height * 0.5 - peakHeight + vertShift)
       }
-      ctx.lineTo(width, height * 0.6)
+      ctx.lineTo(width, height * 0.6 + vertShift)
       ctx.closePath()
       ctx.fill()
     }
 
+    // Mid-distance hills — deep green, vertical parallax
     if (altitude > 500) {
-      const hillAlpha = Math.min(0.3, (altitude - 500) / 2000)
-      ctx.fillStyle = `rgba(40, 50, 40, ${hillAlpha})`
+      const hillAlpha = Math.min(0.35, (altitude - 500) / 1800)
+      const vertShift = altitude * 0.025
+      ctx.fillStyle = `rgba(25, 50, 30, ${hillAlpha})`
       ctx.beginPath()
-      ctx.moveTo(0, height * 0.7)
+      ctx.moveTo(0, height * 0.7 + vertShift)
       for (let x = 0; x < width; x += 30) {
         const hillHeight = Math.sin(x * 0.015 + world.worldScrollX * 0.0003) * 50 +
                            Math.sin(x * 0.03) * 25
-        ctx.lineTo(x, height * 0.6 - hillHeight)
+        ctx.lineTo(x, height * 0.6 - hillHeight + vertShift)
       }
-      ctx.lineTo(width, height * 0.7)
+      ctx.lineTo(width, height * 0.7 + vertShift)
       ctx.closePath()
       ctx.fill()
     }
 
-    const treeLineAlpha = Math.max(0, 0.25 - altitude / 4000)
+    // Near tree line — fades as you climb above it
+    const treeLineAlpha = Math.max(0, 0.3 - altitude / 3500)
     if (treeLineAlpha > 0.02) {
-      ctx.fillStyle = `rgba(20, 40, 20, ${treeLineAlpha})`
+      const vertShift = altitude * 0.04
+      ctx.fillStyle = `rgba(15, 35, 15, ${treeLineAlpha})`
       ctx.beginPath()
-      ctx.moveTo(0, height * 0.8)
+      ctx.moveTo(0, height * 0.8 + vertShift)
       for (let x = 0; x < width; x += 15) {
         const treeHeight = Math.sin(x * 0.05 + world.worldScrollX * 0.001) * 20 +
                            Math.abs(Math.sin(x * 0.1)) * 15
-        ctx.lineTo(x, height * 0.75 - treeHeight)
+        ctx.lineTo(x, height * 0.75 - treeHeight + vertShift)
       }
-      ctx.lineTo(width, height * 0.8)
+      ctx.lineTo(width, height * 0.8 + vertShift)
+      ctx.closePath()
+      ctx.fill()
+    }
+
+    // Near-field shrub layer — small bumps close to ground, fades at altitude
+    const shrubAlpha = Math.max(0, 0.2 - altitude / 2000)
+    if (shrubAlpha > 0.02) {
+      const vertShift = altitude * 0.06
+      ctx.fillStyle = `rgba(25, 45, 20, ${shrubAlpha})`
+      ctx.beginPath()
+      ctx.moveTo(0, height * 0.88 + vertShift)
+      for (let x = 0; x < width; x += 8) {
+        const shrubHeight = Math.abs(Math.sin(x * 0.15 + world.worldScrollX * 0.003)) * 8 +
+                            Math.sin(x * 0.08 + 2) * 4
+        ctx.lineTo(x, height * 0.85 - shrubHeight + vertShift)
+      }
+      ctx.lineTo(width, height * 0.88 + vertShift)
       ctx.closePath()
       ctx.fill()
     }
@@ -1242,14 +1280,21 @@ export function useRenderer(deps: RendererDeps) {
 
     const skyGradient = ctx.createLinearGradient(0, 0, 0, height)
     const altitudeRatio = Math.min(1, currentAltitude / 3000)
-    const skyTop = `rgb(${26 + altitudeRatio * 20}, ${26 + altitudeRatio * 30}, ${46 + altitudeRatio * 40})`
-    skyGradient.addColorStop(0, skyTop)
-    skyGradient.addColorStop(0.5, '#1a1a4e')
-    skyGradient.addColorStop(1, '#16213e')
+    const r = Math.floor(15 + altitudeRatio * 25)
+    const g = Math.floor(10 + altitudeRatio * 20)
+    const b = Math.floor(40 + altitudeRatio * 50)
+    skyGradient.addColorStop(0, `rgb(${r}, ${g}, ${b})`)
+    skyGradient.addColorStop(0.45, `rgb(${20 + altitudeRatio * 10}, ${15 + altitudeRatio * 10}, ${55 + altitudeRatio * 20})`)
+    // Warm horizon band
+    const horizonR = Math.floor(40 + altitudeRatio * 30)
+    const horizonG = Math.floor(20 + altitudeRatio * 15)
+    const horizonB = Math.floor(45 + altitudeRatio * 10)
+    skyGradient.addColorStop(0.85, `rgb(${horizonR}, ${horizonG}, ${horizonB})`)
+    skyGradient.addColorStop(1, `rgb(${horizonR + 15}, ${horizonG + 10}, ${horizonB - 10})`)
     ctx.fillStyle = skyGradient
     ctx.fillRect(0, 0, width, height)
 
-    drawStars(width, height)
+    drawStars(width, height, currentAltitude)
     drawMoon(width, height)
     drawParallaxBackground(width, height, currentAltitude)
     drawClouds(width)
