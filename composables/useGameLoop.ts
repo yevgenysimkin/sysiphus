@@ -542,9 +542,8 @@ export function useGameLoop(deps: GameLoopDeps) {
               if (dist < 600) play8BitSound('bark')
             }
           } else {
-            // Run ahead of the player (same direction player is pushing)
-            // so the dog stays visible on the hill
-            s.dogX = (s.dogX || 0) + world.pushDir * 200 * dt
+            // Run downhill (opposite of push direction) past the player
+            s.dogX = (s.dogX || 0) - world.pushDir * 200 * dt
           }
           break
         }

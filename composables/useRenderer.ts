@@ -439,7 +439,9 @@ export function useRenderer(deps: RendererDeps) {
 
     world.obstacles.forEach(obstacle => {
       const screenX = obstacle.worldX - world.worldScrollX
-      if (screenX < -150 || screenX > width + 150) return
+      // Wider culling for stray_dog since it runs far from its origin
+      const cullMargin = obstacle.type === 'stray_dog' ? 600 : 150
+      if (screenX < -cullMargin || screenX > width + cullMargin) return
 
       const groundY = hillY(screenX, height)
 
@@ -531,15 +533,27 @@ export function useRenderer(deps: RendererDeps) {
     ctx!.fill()
   }
 
-  function drawStrayDog(screenX: number, groundY: number, obstacle: Obstacle) {
+  function drawStrayDog(screenX: number, origGroundY: number, obstacle: Obstacle) {
     const s = obstacle.state
     const dogOffsetX = s.dogX || 0
     const x = screenX + dogOffsetX
     const fled = s.dogFled
 
-    if (fled && Math.abs(dogOffsetX) > 300) return // offscreen
+    if (fled && Math.abs(dogOffsetX) > 600) return // offscreen
+
+    // Recompute ground Y at dog's actual screen position so it follows the hill contour
+    const canvas = gameCanvas.value
+    const groundY = (canvas && dogOffsetX !== 0) ? hillY(x, canvas.height) : origGroundY
 
     ctx!.save()
+
+    // Flip dog to face its run direction
+    if (fled && dogOffsetX < 0) {
+      ctx!.translate(x, 0)
+      ctx!.scale(-1, 1)
+      ctx!.translate(-x, 0)
+    }
+
     ctx!.strokeStyle = '#ddd'
     ctx!.lineWidth = 2
 
