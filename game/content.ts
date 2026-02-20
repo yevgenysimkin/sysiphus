@@ -36,11 +36,27 @@ export const philosopherThoughts = [
   "Man is the measure of all things"
 ]
 
+// Lou & Gary — idle harassment birds dialogue exchange
+// Each entry: { speaker: 'lou' | 'gary', text: string }
+export const louGaryDialogue = [
+  { speaker: 'gary', text: "Hey Lou... whachu up to?" },
+  { speaker: 'lou', text: "Trying to get this guy to start moving." },
+  { speaker: 'gary', text: "I thought you said your mother wasn't feeling well and you couldn't come out." },
+  { speaker: 'lou', text: "Look - can we not do this here? I'm trying to intimidate this guy." },
+  { speaker: 'gary', text: "Yeah, it's just that I think you could have just said you didn't feel like it. You didn't need to lie." },
+  { speaker: 'lou', text: "Look - I'm sorry, ok? But this really isn't the time or place. If this guy doesn't get going..." },
+  { speaker: 'gary', text: "yeah? What'll happen? What's the urgency?" },
+  { speaker: 'lou', text: "Don't you understand?? That boulder needs to get to the top of the..." },
+  { speaker: 'gary', text: "yeah, ok - I'll see you around." },
+]
+
+export const garyExitThought = "I'd stop hanging out with that guy if he didn't have such good worms"
+
 export const castList = [
   { role: 'Sisyphus', actor: 'Stick Figure' },
   { role: 'The Boulder', actor: 'Stick Circle' },
-  { role: 'Bird #1', actor: 'Vladimir Putin' },
-  { role: 'Bird #2', actor: 'Also Vladimir Putin' },
+  { role: 'Lou (Bird)', actor: 'Vladimir Putin' },
+  { role: 'Gary (Bird)', actor: 'Also Vladimir Putin' },
   { role: 'Bird #3', actor: "Look - they're all VP, ok?" },
   { role: 'Vulture', actor: 'Vladimir Putin (in a wig)' },
   { role: 'Gravity', actor: 'E=MC²' },

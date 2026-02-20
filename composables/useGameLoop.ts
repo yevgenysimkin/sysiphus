@@ -1,9 +1,10 @@
 import type { Ref } from 'vue'
 import type { GameState } from './useGameState'
 import type { Obstacle } from './useGameState'
-import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, CONSTANT_SPEED, METER_DRAIN_RATES, LEVEL_DISTANCES } from './usePhysics'
+import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, CONSTANT_SPEED, METER_DRAIN_RATES, LEVEL_DISTANCES, FLAT_START } from './usePhysics'
 import { createObstacleUpdater } from './useGameLoop-obstacles'
-import { TIMING, PHYSICS, ENVIRONMENT, TUMBLE_OFFSET_X } from '~/game/constants'
+import { TIMING, PHYSICS, ENVIRONMENT, TUMBLE_OFFSET_X, BOULDER_RADIUS } from '~/game/constants'
+import { louGaryDialogue, garyExitThought } from '~/game/content'
 import dialogue from '~/game.dialogue.json'
 
 interface GameLoopDeps {
@@ -53,6 +54,15 @@ interface GameLoopDeps {
     currentThought: { text: string; timer: number; fadeIn: number } | null
     lastThoughtTime: number
     levelPhrasesSaid: Record<number, Set<number>>
+    flatIdleTime: number
+    idleBirdSent: boolean
+    idleBoulderThought: boolean
+    isIdle: boolean
+    swatPhase: number
+    idleBird: { x: number; y: number; phase: number; swoopPhase: number; targetX: number; flyingAway: boolean; flyAwayX: number; flyAwayY: number } | null
+    garyBird: { x: number; y: number; phase: number; landed: boolean; flyingAway: boolean; flyAwayX: number; flyAwayY: number; thought: string; thoughtTimer: number } | null
+    garySent: boolean
+    idleDialogue: { exchanges: { speaker: string; text: string }[]; currentIndex: number; timer: number; pauseTimer: number } | null
     gettingUpPhase: number
     currentSassyComment: string
     countdownTimer: number
@@ -69,11 +79,24 @@ interface GameLoopDeps {
     prometheusGreeted: boolean
     prometheusDialogueIndex: number
     prometheusNextExchange: number
+    prometheusExchangePauseTimer: number
     prometheusActiveExchange: { speaker: string; text: string; timer: number; fadeIn: number } | null
     spaceshipX: number
     spaceshipY: number
     spaceshipActive: boolean
     spaceshipTimer: number
+    deliveryBird: {
+      active: boolean
+      phase: 'fetch' | 'grab' | 'carry' | 'drop' | 'exit'
+      x: number
+      y: number
+      pickupX: number
+      dropX: number
+      grabTimer: number
+      bodyPickedUp: boolean
+      dropComplete: boolean
+      bloodDrops: { x: number; y: number; vy: number; alpha: number }[]
+    }
     obstacles: Obstacle[]
   }
   registerTap: () => void
@@ -132,6 +155,39 @@ export function useGameLoop(deps: GameLoopDeps) {
     })
   }
 
+  function spawnIdleBird() {
+    const canvas = gameCanvas.value
+    if (!canvas) return
+    const playerScreenX = world.worldDistance - world.worldScrollX
+    world.idleBird = {
+      x: canvas.width + 80,
+      y: 40,
+      phase: 0,
+      swoopPhase: 0,
+      targetX: playerScreenX,
+      flyingAway: false,
+      flyAwayX: 0,
+      flyAwayY: 0,
+    }
+  }
+
+  function spawnGaryBird() {
+    const canvas = gameCanvas.value
+    if (!canvas) return
+    const playerScreenX = world.worldDistance - world.worldScrollX
+    world.garyBird = {
+      x: -80,        // flies in from left
+      y: 40,
+      phase: 0,
+      landed: false,
+      flyingAway: false,
+      flyAwayX: 0,
+      flyAwayY: 0,
+      thought: '',
+      thoughtTimer: 0,
+    }
+  }
+
   function checkLevelPhrase() {
     if (world.currentThought) return
     // Suppress level phrases during Prometheus dialogue
@@ -174,32 +230,45 @@ export function useGameLoop(deps: GameLoopDeps) {
     // Trigger greeting when within proximity
     if (!world.prometheusGreeted && Math.abs(distTo) < world.prometheusProximity && gameState.value === 'playing') {
       world.prometheusGreeted = true
+      // Start first exchange immediately
+      advancePrometheusExchange()
     }
+  }
 
-    if (!world.prometheusGreeted) return
-
-    // Advance through exchanges based on distance past Prometheus
+  function advancePrometheusExchange() {
     const dialogueSet = dialogue.prometheusDialogues[world.prometheusDialogueIndex]
     if (!dialogueSet || world.prometheusNextExchange >= dialogueSet.exchanges.length) return
 
     const nextExchange = dialogueSet.exchanges[world.prometheusNextExchange]
-    if (distTo >= nextExchange.delay) {
-      world.prometheusActiveExchange = {
-        speaker: nextExchange.speaker,
-        text: nextExchange.text,
-        timer: TIMING.prometheusExchangeDuration,
-        fadeIn: 0
-      }
-      world.prometheusNextExchange++
+    world.prometheusActiveExchange = {
+      speaker: nextExchange.speaker,
+      text: nextExchange.text,
+      timer: TIMING.prometheusExchangeDuration,
+      fadeIn: 0,
     }
+    world.prometheusNextExchange++
   }
 
   function updatePrometheusExchange(dt: number) {
+    // Handle pause between exchanges
+    if (world.prometheusExchangePauseTimer > 0) {
+      world.prometheusExchangePauseTimer -= dt
+      if (world.prometheusExchangePauseTimer <= 0) {
+        advancePrometheusExchange()
+      }
+      return
+    }
+
     if (!world.prometheusActiveExchange) return
     world.prometheusActiveExchange.fadeIn = Math.min(1, world.prometheusActiveExchange.fadeIn + dt * 3)
     world.prometheusActiveExchange.timer -= dt
     if (world.prometheusActiveExchange.timer <= 0) {
       world.prometheusActiveExchange = null
+      // Queue next exchange after a pause
+      const dialogueSet = dialogue.prometheusDialogues[world.prometheusDialogueIndex]
+      if (dialogueSet && world.prometheusNextExchange < dialogueSet.exchanges.length) {
+        world.prometheusExchangePauseTimer = TIMING.prometheusExchangePause
+      }
     }
   }
 
@@ -246,18 +315,61 @@ export function useGameLoop(deps: GameLoopDeps) {
     const drainSeconds = METER_DRAIN_RATES[Math.min(level, METER_DRAIN_RATES.length) - 1] || METER_DRAIN_RATES[0]
     intensity.value -= (100 / drainSeconds) * dt
 
-    if (intensity.value <= 0) {
-      intensity.value = 0
-      startCrushing()
-      return
+    const onFlat = effectiveDist() < FLAT_START
+
+    // Flat terrain idle — track time, spawn events, prevent crushing
+    if (onFlat) {
+      world.flatIdleTime += dt
+
+      // Harassment bird after idle threshold
+      if (world.flatIdleTime > TIMING.idleBirdDelay && !world.idleBirdSent) {
+        world.idleBirdSent = true
+        spawnIdleBird()
+      }
+
+      // Boulder thought bubble after longer idle
+      if (world.flatIdleTime > TIMING.idleBoulderThoughtDelay && !world.idleBoulderThought) {
+        world.idleBoulderThought = true
+        world.currentBoulderExclamation = 'Maybe I should push HIM up the hill?'
+        world.boulderExclamationTimer = TIMING.thoughtDuration
+      }
+
+      // Gary arrives after extended idle
+      if (world.flatIdleTime > TIMING.idleGaryDelay && !world.garySent && world.idleBird) {
+        world.garySent = true
+        spawnGaryBird()
+      }
+
+      if (intensity.value <= 0) {
+        intensity.value = 0
+        return  // idle on flat — no crush, no movement
+      }
+    } else {
+      // Reset idle tracking when leaving flat terrain
+      if (world.flatIdleTime > 0) {
+        world.flatIdleTime = 0
+        world.idleBirdSent = false
+        world.idleBoulderThought = false
+        world.garySent = false
+        world.swatPhase = 0
+        // Birds fly away (handled in updateEnvironment via flatIdleTime check)
+      }
+
+      if (intensity.value <= 0) {
+        intensity.value = 0
+        startCrushing()
+        return
+      }
     }
 
-    // Constant speed movement
-    world.boulderDistance += CONSTANT_SPEED * dt * pd
-    world.worldDistance = world.boulderDistance - 40 * pd
-    score.value += CONSTANT_SPEED * dt * PHYSICS.scoreMultiplier
-    displayScore.value = score.value
-    updateScroll()
+    // Constant speed movement (on flat terrain, only move if player is actively pushing)
+    if (!onFlat || intensity.value > 0) {
+      world.boulderDistance += CONSTANT_SPEED * dt * pd
+      world.worldDistance = world.boulderDistance - 40 * pd
+      score.value += CONSTANT_SPEED * dt * PHYSICS.scoreMultiplier
+      displayScore.value = score.value
+      updateScroll()
+    }
 
     const newLevel = getLevelAtDistance(effectiveDist())
     if (newLevel !== currentLevel.value) {
@@ -311,18 +423,41 @@ export function useGameLoop(deps: GameLoopDeps) {
 
   function updateRollingBack(dt: number) {
     const pd = world.pushDir
-    world.boulderVelocity += PHYSICS.rollbackAcceleration * dt
-    world.boulderDistance -= world.boulderVelocity * dt * pd
-    clampToBottom()
+
+    // If delivery bird is active, animate it instead of the boulder
+    if (world.deliveryBird.active) {
+      updateDeliveryBird(dt)
+      return
+    }
 
     const eDist = effectiveDist()
+    const onFlat = eDist < FLAT_START
+    // Boulder has rolled past the world boundary (0 or 2*PEAK)
+    const pastBottom = pd > 0 ? world.boulderDistance < 0 : world.boulderDistance > PEAK_DISTANCE * 2
+
+    if (onFlat || pastBottom) {
+      // Gradual friction deceleration on flat terrain and beyond
+      world.boulderVelocity *= Math.pow(PHYSICS.rollbackFlatFriction, dt * 60)
+    } else {
+      // Accelerate downhill
+      world.boulderVelocity += PHYSICS.rollbackAcceleration * dt
+    }
+
+    world.boulderDistance -= world.boulderVelocity * dt * pd
+    // No clampToBottom — boulder is free to roll past the world edge
+
+    const currentEDist = Math.max(0, effectiveDist())
     const startDist = finalScore.value / 5
-    const scoreRatio = eDist / Math.max(startDist, 100)
+    const scoreRatio = currentEDist / Math.max(startDist, 100)
     displayScore.value = Math.max(0, Math.floor(finalScore.value * scoreRatio))
 
-    displayLevel.value = getLevelAtDistance(eDist)
-    progressPercent.value = Math.min(100, Math.max(0, (eDist / PEAK_DISTANCE) * 100))
-    updateScroll()
+    displayLevel.value = getLevelAtDistance(currentEDist)
+    progressPercent.value = Math.min(100, Math.max(0, (currentEDist / PEAK_DISTANCE) * 100))
+
+    // Freeze camera once boulder passes the world edge — let boulder roll across screen
+    if (!pastBottom) {
+      updateScroll()
+    }
 
     if (world.gameTime - world.lastRollSoundTime > TIMING.rollSoundInterval && world.boulderVelocity > 5) {
       play8BitSound('roll')
@@ -336,12 +471,119 @@ export function useGameLoop(deps: GameLoopDeps) {
       triggerBoulderExclamation()
     }
 
-    const atBottom = pd > 0 ? world.boulderDistance <= 5 : world.boulderDistance >= PEAK_DISTANCE * 2 - 5
-    if (atBottom) {
-      world.boulderDistance = pd > 0 ? 0 : PEAK_DISTANCE * 2
-      world.boulderVelocity *= 0.7
-      if (world.boulderVelocity < 20) {
-        displayScore.value = 0
+    // Check if boulder reached near screen edge or slowed to a stop
+    const canvas = gameCanvas.value
+    const screenWidth = canvas?.width || 800
+    const boulderScreenX = world.boulderDistance - world.worldScrollX
+    const nearEdge = pd > 0
+      ? boulderScreenX < PHYSICS.rollbackScreenEdgeMargin
+      : boulderScreenX > screenWidth - PHYSICS.rollbackScreenEdgeMargin
+
+    if ((onFlat || pastBottom) && (world.boulderVelocity < 5 || nearEdge)) {
+      world.boulderVelocity = 0
+      displayScore.value = 0
+      spawnDeliveryBird()
+    }
+  }
+
+  function spawnDeliveryBird() {
+    const canvas = gameCanvas.value
+    if (!canvas) return
+    const pd = world.pushDir
+    const bird = world.deliveryBird
+    const crushScreenX = world.sisyphusCrushWorldX - world.worldScrollX
+    const bodyOnScreen = crushScreenX > -50 && crushScreenX < canvas.width + 50
+
+    bird.active = true
+    bird.pickupX = world.sisyphusCrushWorldX
+    bird.dropX = world.boulderDistance + 50 * pd
+    bird.bodyPickedUp = false
+    bird.dropComplete = false
+    bird.grabTimer = 0
+    bird.bloodDrops = []
+
+    if (bodyOnScreen) {
+      // Fly to the existing body on screen
+      bird.phase = 'fetch'
+      bird.x = (pd > 0 ? canvas.width + 150 : -150) + world.worldScrollX
+      bird.y = PHYSICS.deliveryBirdCruiseAltitude
+    } else {
+      // Body is off-screen — fly in already carrying it
+      bird.phase = 'carry'
+      bird.bodyPickedUp = true
+      bird.x = (pd > 0 ? canvas.width + 150 : -150) + world.worldScrollX
+      bird.y = PHYSICS.deliveryBirdCruiseAltitude
+    }
+  }
+
+  function updateDeliveryBird(dt: number) {
+    const bird = world.deliveryBird
+    const canvas = gameCanvas.value
+    if (!canvas) return
+    const speed = PHYSICS.deliveryBirdSpeed
+
+    // Update blood drops
+    bird.bloodDrops = bird.bloodDrops.filter(drop => {
+      drop.y += drop.vy * dt
+      drop.vy += 200 * dt  // gravity
+      drop.alpha -= 0.4 * dt
+      return drop.alpha > 0
+    })
+
+    // Spawn new blood drops while carrying
+    if ((bird.phase === 'carry' || bird.phase === 'fetch') && bird.bodyPickedUp && Math.random() < 8 * dt) {
+      bird.bloodDrops.push({
+        x: bird.x + (Math.random() - 0.5) * 10,
+        y: bird.y + 60,   // below the carried body
+        vy: 20 + Math.random() * 40,
+        alpha: 0.8 + Math.random() * 0.2,
+      })
+    }
+
+    if (bird.phase === 'fetch') {
+      // Fly toward the crush body position
+      const dx = bird.pickupX - bird.x
+      if (Math.abs(dx) > 15) {
+        bird.x += Math.sign(dx) * speed * dt
+        // Descend as we approach
+        const targetY = Math.abs(dx) < 200 ? -PHYSICS.deliveryBirdDropHeight : PHYSICS.deliveryBirdCruiseAltitude
+        bird.y += (targetY - bird.y) * 2 * dt
+      } else {
+        bird.phase = 'grab'
+        bird.grabTimer = 0
+        bird.y = -PHYSICS.deliveryBirdDropHeight
+      }
+    } else if (bird.phase === 'grab') {
+      // Brief pause to "pick up" the body
+      bird.grabTimer += dt
+      if (bird.grabTimer > 0.4) {
+        bird.bodyPickedUp = true  // hides the crushed body from rolling_back renderer
+        bird.phase = 'carry'
+      }
+    } else if (bird.phase === 'carry') {
+      // Fly toward drop point near boulder
+      const dx = bird.dropX - bird.x
+      if (Math.abs(dx) > 15) {
+        bird.x += Math.sign(dx) * speed * dt
+        // Cruise high, descend near target
+        const targetY = Math.abs(dx) < 150 ? -PHYSICS.deliveryBirdDropHeight : PHYSICS.deliveryBirdCruiseAltitude
+        bird.y += (targetY - bird.y) * 2 * dt
+      } else {
+        bird.phase = 'drop'
+        bird.dropComplete = true
+      }
+    } else if (bird.phase === 'drop') {
+      bird.phase = 'exit'
+    } else if (bird.phase === 'exit') {
+      // Fly away off-screen — climb and exit
+      const exitDir = world.pushDir > 0 ? -1 : 1
+      bird.x += exitDir * speed * 1.5 * dt
+      bird.y += (PHYSICS.deliveryBirdCruiseAltitude - bird.y) * 2 * dt
+
+      const screenX = bird.x - world.worldScrollX
+      if (screenX < -200 || screenX > (canvas.width || 800) + 200) {
+        bird.active = false
+        bird.dropComplete = false  // hand off to continue_prompt's own body renderer
         continueFromPeak.value = false
         continueTimer.value = TIMING.continueTimerDuration
         gameState.value = 'continue_prompt'
@@ -432,6 +674,10 @@ export function useGameLoop(deps: GameLoopDeps) {
     if (world.countdownTimer > TIMING.countdownTotal) {
       gameState.value = 'playing'
       world.lastTapTime = Date.now()
+      // On hills, give a grace period before crush; on flat, meter stays at 0
+      if (effectiveDist() >= FLAT_START) {
+        intensity.value = PHYSICS.initialIntensity
+      }
     }
   }
 
@@ -444,16 +690,8 @@ export function useGameLoop(deps: GameLoopDeps) {
         world.pushDir = (world.pushDir * -1) as 1 | -1
       }
 
-      // Set boulder to the current "bottom"
-      const bottom = world.pushDir > 0 ? 0 : PEAK_DISTANCE * 2
-      world.boulderDistance = bottom
-      world.worldDistance = bottom - 40 * world.pushDir
-
-      updateScroll()
-
       world.boulderVelocity = 0
-      intensity.value = PHYSICS.initialIntensity
-      world.lastTapTime = Date.now()
+      intensity.value = 0
       score.value = 0
       displayScore.value = 0
       displayLevel.value = 1
@@ -461,7 +699,37 @@ export function useGameLoop(deps: GameLoopDeps) {
       world.sisyphusFallen = false
       world.sisyphusRunning = false
       world.reachedPeak = false
+
+      // Push boulder back to start instead of teleporting
+      gameState.value = 'returning'
+    }
+  }
+
+  function updateReturning(dt: number) {
+    const pd = world.pushDir
+    const bottom = pd > 0 ? 0 : PEAK_DISTANCE * 2
+
+    // Push boulder toward start position
+    world.boulderDistance += PHYSICS.returnPushSpeed * dt * pd
+    world.worldDistance = world.boulderDistance - 40 * pd
+
+    // Animate walking
+    world.legPhase += dt * 8
+    world.boulderRotation += dt * (PHYSICS.returnPushSpeed / BOULDER_RADIUS) * pd
+
+    // Update camera — but once we reach start, freeze
+    const reached = pd > 0
+      ? world.boulderDistance >= bottom
+      : world.boulderDistance <= bottom
+
+    if (reached) {
+      world.boulderDistance = bottom
+      world.worldDistance = bottom - 40 * pd
+      updateScroll()
+      world.lastTapTime = Date.now()
       startCountdown()
+    } else {
+      updateScroll()
     }
   }
 
@@ -484,7 +752,10 @@ export function useGameLoop(deps: GameLoopDeps) {
     world.gameTime += dt
     world.breathPhase += dt * 3
 
-    if (gameState.value === 'playing') {
+    // Animate legs/sounds only when actually moving (not idle on flat)
+    const isMoving = gameState.value === 'returning' || (gameState.value === 'playing' && (effectiveDist() >= FLAT_START || intensity.value > 0))
+    world.isIdle = gameState.value === 'playing' && !isMoving
+    if (isMoving) {
       world.legPhase += dt * 8
       world.boulderRotation += dt * (CONSTANT_SPEED / 26) * world.pushDir
       if (world.gameTime - world.lastFootstepTime > TIMING.footstepInterval) {
@@ -498,6 +769,11 @@ export function useGameLoop(deps: GameLoopDeps) {
     }
 
     world.armPhase *= 0.88
+
+    // Decrement boulder exclamation timer during playing (for idle harassment thoughts)
+    if (gameState.value === 'playing' && world.boulderExclamationTimer > 0) {
+      world.boulderExclamationTimer -= dt
+    }
 
     updatePrometheusExchange(dt)
 
@@ -536,11 +812,134 @@ export function useGameLoop(deps: GameLoopDeps) {
       }
     }
 
+    // Idle harassment bird (Lou) — flies in, swoops at Sisyphus's head, circles
+    if (world.idleBird) {
+      const bird = world.idleBird
+      const canvas = gameCanvas.value
+      const playerScreenX = world.worldDistance - world.worldScrollX
+
+      if (bird.flyingAway) {
+        // Lou flies away — up and to the right, leisurely
+        bird.x += PHYSICS.louFlyAwaySpeedX * dt
+        bird.y += PHYSICS.louFlyAwaySpeedY * dt
+        bird.swoopPhase += dt * 6
+        if (bird.x > (canvas?.width || 800) + 200) {
+          world.idleBird = null
+        }
+      } else {
+        bird.phase += dt
+        bird.swoopPhase += dt * 2.5
+
+        if (bird.phase < 2.5) {
+          // Approach: fly from right toward player
+          bird.x += (playerScreenX - bird.x) * PHYSICS.louApproachRate * dt
+          bird.y = 30 + Math.sin(bird.swoopPhase) * 10
+        } else {
+          // Circle and dive-bomb around player's head
+          const circleTime = bird.phase - 2.5
+          const radius = 60 + Math.sin(circleTime * 0.7) * 25
+          bird.x = playerScreenX + Math.cos(circleTime * 2.5) * radius
+          bird.y = 20 + Math.sin(circleTime * 2.5) * 30 + Math.max(0, Math.sin(circleTime * 5)) * 40
+
+          // Sisyphus swats periodically
+          if (Math.sin(circleTime * 2.5) > 0.8 && world.swatPhase <= 0) {
+            world.swatPhase = 0.4  // swat animation duration
+          }
+        }
+
+        // When Sis starts moving, Lou flies away (not instant disappear)
+        if (world.flatIdleTime <= 0 && !world.idleDialogue) {
+          bird.flyingAway = true
+        }
+      }
+    }
+
+    // Sisyphus swat animation countdown
+    if (world.swatPhase > 0) {
+      world.swatPhase -= dt
+      if (world.swatPhase < 0) world.swatPhase = 0
+    }
+
+    // Gary bird — flies in, lands, triggers dialogue
+    if (world.garyBird) {
+      const gary = world.garyBird
+      const canvas = gameCanvas.value
+      const playerScreenX = world.worldDistance - world.worldScrollX
+
+      if (gary.flyingAway) {
+        // Gary flies away — up and to the left, leisurely
+        gary.x -= PHYSICS.garyFlyAwaySpeedX * dt
+        gary.y += PHYSICS.garyFlyAwaySpeedY * dt
+        gary.landed = false
+        gary.phase += dt * 6
+        if (gary.thoughtTimer > 0) gary.thoughtTimer -= dt
+        if (gary.x < -200) {
+          world.garyBird = null
+        }
+      } else if (!gary.landed) {
+        // Fly in from left toward a spot near the player
+        gary.phase += dt
+        const landingX = playerScreenX - PHYSICS.garyLandingOffset
+        gary.x += (landingX - gary.x) * PHYSICS.garyApproachRate * dt
+        gary.y += (0 - gary.y) * PHYSICS.garyApproachRate * dt
+        if (Math.abs(gary.x - landingX) < 5 && gary.phase > PHYSICS.garyLandingPhaseMin) {
+          gary.landed = true
+          gary.x = landingX
+          gary.y = 0
+          // Start the dialogue exchange
+          world.idleDialogue = {
+            exchanges: [...louGaryDialogue],
+            currentIndex: 0,
+            timer: TIMING.idleDialogueLineDuration,
+            pauseTimer: 0,
+          }
+        }
+      }
+    }
+
+    // Idle dialogue exchange (Lou & Gary)
+    if (world.idleDialogue) {
+      const dlg = world.idleDialogue
+      if (dlg.pauseTimer > 0) {
+        dlg.pauseTimer -= dt
+        if (dlg.pauseTimer <= 0) {
+          dlg.currentIndex++
+          if (dlg.currentIndex >= dlg.exchanges.length) {
+            // Dialogue finished — Gary flies off with departing thought
+            world.idleDialogue = null
+            if (world.garyBird) {
+              world.garyBird.flyingAway = true
+              world.garyBird.thought = garyExitThought
+              world.garyBird.thoughtTimer = TIMING.garyExitThoughtDuration
+            }
+          } else {
+            dlg.timer = TIMING.idleDialogueLineDuration
+          }
+        }
+      } else {
+        dlg.timer -= dt
+        if (dlg.timer <= 0) {
+          dlg.pauseTimer = TIMING.idleDialoguePause
+        }
+      }
+
+      // If player starts moving during dialogue, end it — birds fly away
+      if (world.flatIdleTime <= 0) {
+        world.idleDialogue = null
+        if (world.idleBird && !world.idleBird.flyingAway) {
+          world.idleBird.flyingAway = true
+        }
+        if (world.garyBird && !world.garyBird.flyingAway) {
+          world.garyBird.flyingAway = true
+        }
+      }
+    }
+
     updateObstacles(dt)
   }
 
   function gameLoop() {
-    const validStates = ['playing', 'countdown', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up', 'final_thought', 'credits']
+    const validStates = ['playing', 'countdown', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up', 'returning', 'final_thought', 'credits']
     if (!validStates.includes(gameState.value)) return
 
     const canvas = gameCanvas.value
@@ -572,6 +971,8 @@ export function useGameLoop(deps: GameLoopDeps) {
       updateContinuePrompt(dt)
     } else if (gameState.value === 'getting_up') {
       updateGettingUp(dt)
+    } else if (gameState.value === 'returning') {
+      updateReturning(dt)
     } else if (gameState.value === 'final_thought') {
       updateFinalThought(dt)
     } else if (gameState.value === 'credits') {

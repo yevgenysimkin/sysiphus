@@ -4,7 +4,7 @@ import type { Bird, Cloud, Tree, GrassTuft, Obstacle, SmokeParticle, AttackBird,
 import { PEAK_DISTANCE, LEVEL_DISTANCES, LEVEL_ANGLES, GROUND_SCREEN_Y_OFFSET } from './usePhysics'
 import { createObstacleRenderer } from './useRenderer-obstacles'
 import { createCharacterRenderer } from './useRenderer-character'
-import { COLORS, FONTS, ENVIRONMENT } from '~/game/constants'
+import { COLORS, FONTS, ENVIRONMENT, TIMING, BUBBLE_DEFAULTS, fontSizePx } from '~/game/constants'
 
 interface BubbleOptions {
   alpha?: number
@@ -60,6 +60,24 @@ interface RendererDeps {
     spaceshipY: number
     spaceshipActive: boolean
     spaceshipTimer: number
+    flatIdleTime: number
+    isIdle: boolean
+    swatPhase: number
+    idleBird: { x: number; y: number; phase: number; swoopPhase: number; targetX: number; flyingAway: boolean; flyAwayX: number; flyAwayY: number } | null
+    garyBird: { x: number; y: number; phase: number; landed: boolean; flyingAway: boolean; flyAwayX: number; flyAwayY: number; thought: string; thoughtTimer: number } | null
+    idleDialogue: { exchanges: { speaker: string; text: string }[]; currentIndex: number; timer: number; pauseTimer: number } | null
+    deliveryBird: {
+      active: boolean
+      phase: 'fetch' | 'grab' | 'carry' | 'drop' | 'exit'
+      x: number
+      y: number
+      pickupX: number
+      dropX: number
+      grabTimer: number
+      bodyPickedUp: boolean
+      dropComplete: boolean
+      bloodDrops: { x: number; y: number; vy: number; alpha: number }[]
+    }
   }
   continueFromPeak: Ref<boolean>
   getHillYAtScreenX: (screenX: number, canvasHeight: number, worldScrollX: number, boulderDistance: number) => number
@@ -104,9 +122,11 @@ export function useRenderer(deps: RendererDeps) {
 
     const alpha = options?.alpha ?? 1
     const font = options?.font ?? FONTS.md
-    const maxWidth = options?.maxWidth ?? 180
-    const offsetX = options?.offsetX ?? 20
-    const offsetY = options?.offsetY ?? -20
+    const maxWidth = options?.maxWidth ?? BUBBLE_DEFAULTS.maxWidth
+    const offsetX = options?.offsetX ?? BUBBLE_DEFAULTS.offsetX
+    const offsetY = options?.offsetY ?? BUBBLE_DEFAULTS.offsetY
+    const padding = BUBBLE_DEFAULTS.padding
+    const edgeMargin = BUBBLE_DEFAULTS.edgeMargin
 
     ctx.save()
     ctx.globalAlpha = alpha
@@ -126,70 +146,70 @@ export function useRenderer(deps: RendererDeps) {
     }
     lines.push(currentLine.trim())
 
-    const lineHeight = parseInt(font) + 4
-    const padding = 10
-    const bubbleWidth = Math.min(maxWidth + 24, Math.max(...lines.map(l => ctx!.measureText(l).width)) + padding * 2 + 4)
+    const lineHeight = fontSizePx(font) + BUBBLE_DEFAULTS.lineHeightPadding
+    const bubbleWidth = Math.min(maxWidth + padding * 2 + 4, Math.max(...lines.map(l => ctx!.measureText(l).width)) + padding * 2 + 4)
     const bubbleHeight = lines.length * lineHeight + padding * 2
 
     let bubbleX = speakerX + offsetX
     let bubbleY = speakerY + offsetY - bubbleHeight
 
-    if (bubbleX + bubbleWidth > canvas.width - 5) {
-      bubbleX = canvas.width - bubbleWidth - 5
+    if (bubbleX + bubbleWidth > canvas.width - edgeMargin) {
+      bubbleX = canvas.width - bubbleWidth - edgeMargin
     }
-    if (bubbleX < 5) bubbleX = 5
-    if (bubbleY < 5) bubbleY = 5
-    if (bubbleY + bubbleHeight > canvas.height - 5) {
-      bubbleY = canvas.height - bubbleHeight - 5
+    if (bubbleX < edgeMargin) bubbleX = edgeMargin
+    if (bubbleY < edgeMargin) bubbleY = edgeMargin
+    if (bubbleY + bubbleHeight > canvas.height - edgeMargin) {
+      bubbleY = canvas.height - bubbleHeight - edgeMargin
     }
 
-    ctx.fillStyle = '#fff'
-    ctx.strokeStyle = '#333'
-    ctx.lineWidth = 2
+    const B = BUBBLE_DEFAULTS
+    ctx.fillStyle = COLORS.bubbleFill
+    ctx.strokeStyle = COLORS.bubbleStroke
+    ctx.lineWidth = B.strokeWidth
     ctx.beginPath()
-    ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, type === 'thought' ? 12 : 8)
+    ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, type === 'thought' ? B.thoughtRadius : B.speechRadius)
     ctx.fill()
     ctx.stroke()
 
     if (type === 'speech') {
-      const tailBaseX = Math.max(bubbleX + 10, Math.min(bubbleX + bubbleWidth - 10, speakerX + offsetX))
+      const tailBaseX = Math.max(bubbleX + B.tailInset, Math.min(bubbleX + bubbleWidth - B.tailInset, speakerX + offsetX))
       const tailBaseY = bubbleY + bubbleHeight
-      ctx.fillStyle = '#fff'
+      ctx.fillStyle = COLORS.bubbleFill
       ctx.beginPath()
-      ctx.moveTo(tailBaseX - 6, tailBaseY - 1)
-      ctx.lineTo(speakerX + 5, speakerY - 5)
-      ctx.lineTo(tailBaseX + 6, tailBaseY - 1)
+      ctx.moveTo(tailBaseX - B.tailHalfWidth, tailBaseY - B.tailGap)
+      ctx.lineTo(speakerX + B.tailSpeakerOffset, speakerY - B.tailSpeakerOffset)
+      ctx.lineTo(tailBaseX + B.tailHalfWidth, tailBaseY - B.tailGap)
       ctx.fill()
-      ctx.strokeStyle = '#333'
+      ctx.strokeStyle = COLORS.bubbleStroke
       ctx.beginPath()
-      ctx.moveTo(tailBaseX - 6, tailBaseY)
-      ctx.lineTo(speakerX + 5, speakerY - 5)
-      ctx.lineTo(tailBaseX + 6, tailBaseY)
+      ctx.moveTo(tailBaseX - B.tailHalfWidth, tailBaseY)
+      ctx.lineTo(speakerX + B.tailSpeakerOffset, speakerY - B.tailSpeakerOffset)
+      ctx.lineTo(tailBaseX + B.tailHalfWidth, tailBaseY)
       ctx.stroke()
     } else {
-      const dotStartX = bubbleX + 5
-      const dotStartY = bubbleY + bubbleHeight + 5
+      const dotStartX = bubbleX + B.dotStartOffset
+      const dotStartY = bubbleY + bubbleHeight + B.dotStartOffset
       const dx = speakerX - dotStartX
       const dy = speakerY - dotStartY
       const dist = Math.sqrt(dx * dx + dy * dy)
       const ux = dx / (dist || 1)
       const uy = dy / (dist || 1)
 
-      ctx.fillStyle = '#fff'
-      ctx.strokeStyle = '#333'
+      ctx.fillStyle = COLORS.bubbleFill
+      ctx.strokeStyle = COLORS.bubbleStroke
       ctx.beginPath()
-      ctx.arc(dotStartX + ux * 10, dotStartY + uy * 10, 5, 0, Math.PI * 2)
+      ctx.arc(dotStartX + ux * B.dotNearDist, dotStartY + uy * B.dotNearDist, B.dotNearRadius, 0, Math.PI * 2)
       ctx.fill()
       ctx.stroke()
       ctx.beginPath()
-      ctx.arc(dotStartX + ux * 22, dotStartY + uy * 22, 3, 0, Math.PI * 2)
+      ctx.arc(dotStartX + ux * B.dotFarDist, dotStartY + uy * B.dotFarDist, B.dotFarRadius, 0, Math.PI * 2)
       ctx.fill()
       ctx.stroke()
     }
 
-    ctx.fillStyle = '#000'
+    ctx.fillStyle = COLORS.textBlack
     lines.forEach((line, i) => {
-      ctx!.fillText(line, bubbleX + padding, bubbleY + padding + lineHeight * (i + 0.8))
+      ctx!.fillText(line, bubbleX + padding, bubbleY + padding + lineHeight * (i + B.textLineOffset))
     })
 
     ctx.restore()
@@ -378,49 +398,115 @@ export function useRenderer(deps: RendererDeps) {
     ctx.fill()
   }
 
-  function drawTrees(width: number, height: number) {
+  function drawTrees(width: number, height: number, layer?: 'bg' | 'fg') {
     if (!ctx) return
+    const c = ctx!
 
     world.trees.forEach(tree => {
+      if (layer && tree.layer !== layer) return
       const screenX = tree.worldX - world.worldScrollX
-      if (screenX < -50 || screenX > width + 50) return
+      if (screenX < -300 || screenX > width + 300) return
 
       const groundY = hillY(screenX, height)
       const size = tree.size
 
-      ctx!.strokeStyle = '#3d2817'
-      ctx!.lineWidth = size * 0.15
-
       if (tree.type === 'pine') {
-        ctx!.beginPath()
-        ctx!.moveTo(screenX, groundY)
-        ctx!.lineTo(screenX, groundY - size * 0.4)
-        ctx!.stroke()
-        ctx!.fillStyle = '#1a3d1a'
-        ctx!.beginPath()
-        ctx!.moveTo(screenX, groundY - size)
-        ctx!.lineTo(screenX - size * 0.3, groundY - size * 0.3)
-        ctx!.lineTo(screenX + size * 0.3, groundY - size * 0.3)
-        ctx!.closePath()
-        ctx!.fill()
+        // Textured trunk
+        c.strokeStyle = COLORS.trunkBrown
+        c.lineWidth = size * 0.08
+        c.beginPath()
+        c.moveTo(screenX, groundY)
+        c.lineTo(screenX, groundY - size * 0.45)
+        c.stroke()
+
+        // Three layered canopy tiers
+        c.fillStyle = COLORS.pineGreen
+        for (let tier = 0; tier < 3; tier++) {
+          const tierY = groundY - size * (0.35 + tier * 0.22)
+          const tierW = size * (0.35 - tier * 0.08)
+          const tierH = size * 0.3
+          c.beginPath()
+          c.moveTo(screenX, tierY - tierH)
+          c.lineTo(screenX - tierW, tierY)
+          c.lineTo(screenX + tierW, tierY)
+          c.closePath()
+          c.fill()
+        }
+
+        // Highlight edges
+        c.strokeStyle = '#2a5a2a'
+        c.lineWidth = 1
+        for (let tier = 0; tier < 3; tier++) {
+          const tierY = groundY - size * (0.35 + tier * 0.22)
+          const tierW = size * (0.35 - tier * 0.08)
+          const tierH = size * 0.3
+          c.beginPath()
+          c.moveTo(screenX, tierY - tierH)
+          c.lineTo(screenX - tierW, tierY)
+          c.lineTo(screenX + tierW, tierY)
+          c.closePath()
+          c.stroke()
+        }
       } else if (tree.type === 'oak') {
-        ctx!.beginPath()
-        ctx!.moveTo(screenX, groundY)
-        ctx!.lineTo(screenX, groundY - size * 0.5)
-        ctx!.stroke()
-        ctx!.fillStyle = '#2d4a2d'
-        ctx!.beginPath()
-        ctx!.arc(screenX, groundY - size * 0.7, size * 0.35, 0, Math.PI * 2)
-        ctx!.fill()
+        // Thick trunk with bark texture
+        c.strokeStyle = COLORS.trunkBrown
+        c.lineWidth = size * 0.1
+        c.beginPath()
+        c.moveTo(screenX, groundY)
+        c.lineTo(screenX, groundY - size * 0.45)
+        c.stroke()
+
+        // Main branches
+        c.lineWidth = size * 0.05
+        c.beginPath()
+        c.moveTo(screenX, groundY - size * 0.4)
+        c.lineTo(screenX - size * 0.25, groundY - size * 0.6)
+        c.moveTo(screenX, groundY - size * 0.4)
+        c.lineTo(screenX + size * 0.2, groundY - size * 0.55)
+        c.stroke()
+
+        // Layered canopy (multiple overlapping circles)
+        c.fillStyle = COLORS.oakGreen
+        const cx = screenX
+        const cy = groundY - size * 0.65
+        const r = size * 0.3
+        c.beginPath()
+        c.arc(cx - r * 0.4, cy + r * 0.1, r * 0.7, 0, Math.PI * 2)
+        c.fill()
+        c.beginPath()
+        c.arc(cx + r * 0.4, cy + r * 0.15, r * 0.65, 0, Math.PI * 2)
+        c.fill()
+        c.beginPath()
+        c.arc(cx, cy - r * 0.2, r * 0.75, 0, Math.PI * 2)
+        c.fill()
+        // Lighter highlight
+        c.fillStyle = '#3a5a3a'
+        c.beginPath()
+        c.arc(cx + r * 0.1, cy - r * 0.3, r * 0.4, 0, Math.PI * 2)
+        c.fill()
       } else {
-        ctx!.strokeStyle = '#4a3a2a'
-        ctx!.beginPath()
-        ctx!.moveTo(screenX, groundY)
-        ctx!.lineTo(screenX, groundY - size * 0.8)
-        ctx!.lineTo(screenX - size * 0.2, groundY - size * 0.9)
-        ctx!.moveTo(screenX, groundY - size * 0.6)
-        ctx!.lineTo(screenX + size * 0.25, groundY - size * 0.75)
-        ctx!.stroke()
+        // Dead tree — gnarled trunk with multiple branches
+        c.strokeStyle = COLORS.deadBranch
+        c.lineWidth = size * 0.07
+        c.beginPath()
+        c.moveTo(screenX, groundY)
+        c.lineTo(screenX + size * 0.03, groundY - size * 0.5)
+        c.lineTo(screenX - size * 0.02, groundY - size * 0.8)
+        c.stroke()
+
+        // Branches
+        c.lineWidth = size * 0.04
+        c.beginPath()
+        c.moveTo(screenX - size * 0.02, groundY - size * 0.6)
+        c.lineTo(screenX - size * 0.25, groundY - size * 0.75)
+        c.lineTo(screenX - size * 0.3, groundY - size * 0.85)
+        c.moveTo(screenX + size * 0.03, groundY - size * 0.5)
+        c.lineTo(screenX + size * 0.2, groundY - size * 0.6)
+        c.moveTo(screenX - size * 0.02, groundY - size * 0.8)
+        c.lineTo(screenX + size * 0.15, groundY - size * 0.92)
+        c.moveTo(screenX - size * 0.02, groundY - size * 0.8)
+        c.lineTo(screenX - size * 0.12, groundY - size * 0.95)
+        c.stroke()
       }
     })
   }
@@ -703,7 +789,7 @@ export function useRenderer(deps: RendererDeps) {
     }
   }
 
-  function drawBirds() {
+  function drawBirds(width: number, height: number) {
     if (!ctx) return
     world.birds.forEach(bird => {
       const flapY = Math.sin(bird.flapPhase) * 4
@@ -715,6 +801,190 @@ export function useRenderer(deps: RendererDeps) {
       ctx!.lineTo(bird.x + 4, bird.y + flapY)
       ctx!.stroke()
     })
+
+    // Idle harassment bird (Lou) — large, menacing
+    if (world.idleBird) {
+      const bird = world.idleBird
+      const groundY = hillY(bird.x, height)
+      const birdY = groundY - 60 - bird.y
+
+      ctx!.save()
+      ctx!.translate(bird.x, birdY)
+
+      ctx!.strokeStyle = '#fff'
+      ctx!.lineWidth = 2.5
+      const flapY = Math.sin(bird.swoopPhase * 6) * 15
+
+      // Body
+      ctx!.beginPath()
+      ctx!.ellipse(0, 0, 14, 5, 0, 0, Math.PI * 2)
+      ctx!.stroke()
+
+      // Wings
+      ctx!.lineWidth = 2
+      ctx!.beginPath()
+      ctx!.moveTo(-6, 0)
+      ctx!.quadraticCurveTo(-16, flapY - 12, -26, flapY - 6)
+      ctx!.moveTo(6, 0)
+      ctx!.quadraticCurveTo(16, flapY - 12, 26, flapY - 6)
+      ctx!.stroke()
+
+      // Talons
+      ctx!.strokeStyle = '#ccc'
+      ctx!.lineWidth = 1.5
+      ctx!.beginPath()
+      ctx!.moveTo(-3, 5)
+      ctx!.lineTo(-4, 12)
+      ctx!.lineTo(-7, 15)
+      ctx!.moveTo(-4, 12)
+      ctx!.lineTo(-2, 16)
+      ctx!.moveTo(3, 5)
+      ctx!.lineTo(4, 12)
+      ctx!.lineTo(7, 15)
+      ctx!.moveTo(4, 12)
+      ctx!.lineTo(2, 16)
+      ctx!.stroke()
+
+      // Beak — hooked
+      ctx!.strokeStyle = '#fff'
+      ctx!.lineWidth = 2
+      ctx!.beginPath()
+      ctx!.moveTo(14, -2)
+      ctx!.lineTo(22, 1)
+      ctx!.lineTo(20, 5)
+      ctx!.stroke()
+
+      // Angry eye
+      ctx!.fillStyle = '#fff'
+      ctx!.beginPath()
+      ctx!.arc(8, -3, 2, 0, Math.PI * 2)
+      ctx!.fill()
+      ctx!.fillStyle = '#000'
+      ctx!.beginPath()
+      ctx!.arc(8.5, -2.5, 1, 0, Math.PI * 2)
+      ctx!.fill()
+
+      ctx!.restore()
+
+    }
+
+    // Gary bird (second idle bird — lands near player)
+    if (world.garyBird) {
+      const gary = world.garyBird
+      const playerScreenX = world.worldDistance - world.worldScrollX
+      const groundY = hillY(gary.x, height)
+      const garyY = gary.landed ? groundY : (groundY - 60 - gary.y)
+
+      ctx!.save()
+      ctx!.translate(gary.x, garyY)
+
+      ctx!.strokeStyle = '#fff'
+      ctx!.lineWidth = 2.5
+
+      if (gary.landed && !gary.flyingAway) {
+        // Standing bird on ground — body pointing right, wings folded
+        ctx!.beginPath()
+        ctx!.ellipse(0, -5, 12, 5, 0.2, 0, Math.PI * 2)
+        ctx!.stroke()
+        // Head
+        ctx!.beginPath()
+        ctx!.arc(10, -10, 4, 0, Math.PI * 2)
+        ctx!.stroke()
+        // Beak
+        ctx!.beginPath()
+        ctx!.moveTo(14, -10)
+        ctx!.lineTo(19, -9)
+        ctx!.lineTo(14, -8)
+        ctx!.stroke()
+        // Legs
+        ctx!.strokeStyle = '#ccc'
+        ctx!.lineWidth = 1.5
+        ctx!.beginPath()
+        ctx!.moveTo(-2, 0)
+        ctx!.lineTo(-4, 8)
+        ctx!.lineTo(-7, 10)
+        ctx!.moveTo(-4, 8)
+        ctx!.lineTo(-1, 10)
+        ctx!.moveTo(4, 0)
+        ctx!.lineTo(6, 8)
+        ctx!.lineTo(3, 10)
+        ctx!.moveTo(6, 8)
+        ctx!.lineTo(9, 10)
+        ctx!.stroke()
+        // Eye
+        ctx!.fillStyle = '#fff'
+        ctx!.beginPath()
+        ctx!.arc(11, -11, 1.5, 0, Math.PI * 2)
+        ctx!.fill()
+        ctx!.fillStyle = '#000'
+        ctx!.beginPath()
+        ctx!.arc(11.5, -11, 0.8, 0, Math.PI * 2)
+        ctx!.fill()
+      } else {
+        // Flying Gary
+        const flapY = Math.sin(gary.phase * 6) * 15
+        ctx!.beginPath()
+        ctx!.ellipse(0, 0, 12, 5, 0, 0, Math.PI * 2)
+        ctx!.stroke()
+        ctx!.lineWidth = 2
+        ctx!.beginPath()
+        ctx!.moveTo(-5, 0)
+        ctx!.quadraticCurveTo(-14, flapY - 10, -22, flapY - 5)
+        ctx!.moveTo(5, 0)
+        ctx!.quadraticCurveTo(14, flapY - 10, 22, flapY - 5)
+        ctx!.stroke()
+        // Beak
+        ctx!.lineWidth = 2
+        const flyDir = gary.flyingAway ? -1 : 1
+        ctx!.beginPath()
+        ctx!.moveTo(12 * flyDir, -2)
+        ctx!.lineTo(18 * flyDir, 0)
+        ctx!.lineTo(12 * flyDir, 2)
+        ctx!.stroke()
+      }
+
+      ctx!.restore()
+
+    }
+  }
+
+  /** Draw idle bird dialogue bubbles — called after fg trees for proper z-order */
+  function drawIdleBubbles(width: number, height: number) {
+    if (!ctx) return
+
+    // Gary departing thought bubble
+    if (world.garyBird && world.garyBird.flyingAway && world.garyBird.thought && world.garyBird.thoughtTimer > 0) {
+      const gary = world.garyBird
+      const garyGroundY = hillY(gary.x, height)
+      const garyY = garyGroundY - 60 - gary.y
+      const alpha = Math.min(1, gary.thoughtTimer)
+      drawBubble(gary.x, garyY - 20, gary.thought, 'thought', {
+        alpha, font: FONTS.sm, maxWidth: 160, offsetX: -20, offsetY: -30
+      })
+    }
+
+    // Idle dialogue bubbles (Lou & Gary exchange)
+    if (world.idleDialogue && world.idleDialogue.pauseTimer <= 0) {
+      const dlg = world.idleDialogue
+      if (dlg.currentIndex < dlg.exchanges.length) {
+        const line = dlg.exchanges[dlg.currentIndex]
+        const alpha = Math.min(1, dlg.timer, (TIMING.idleDialogueLineDuration - dlg.timer) * 3)
+
+        if (line.speaker === 'lou' && world.idleBird) {
+          const birdGroundY = hillY(world.idleBird.x, height)
+          const birdY = birdGroundY - 60 - world.idleBird.y
+          drawBubble(world.idleBird.x, birdY - 10, line.text, 'speech', {
+            alpha, font: FONTS.sm, maxWidth: 180, offsetX: -30, offsetY: -35
+          })
+        } else if (line.speaker === 'gary' && world.garyBird) {
+          const garyGroundY = hillY(world.garyBird.x, height)
+          const garyY = world.garyBird.landed ? garyGroundY - 18 : (garyGroundY - 60 - world.garyBird.y)
+          drawBubble(world.garyBird.x, garyY, line.text, 'speech', {
+            alpha, font: FONTS.sm, maxWidth: 180, offsetX: -30, offsetY: -35
+          })
+        }
+      }
+    }
   }
 
   function render() {
@@ -746,18 +1016,21 @@ export function useRenderer(deps: RendererDeps) {
     drawMoon(width, height)
     drawParallaxBackground(width, height, currentAltitude)
     drawClouds(width)
-    drawTrees(width, height)
+    drawTrees(width, height, 'bg')
     drawGrass(width, height)
     obstacleRenderer.drawLandmarks(width, height)
     drawHill(width, height)
     drawPrometheus(width, height)
     drawSpaceship()
-    drawBirds()
+    drawBirds(width, height)
     characterRenderer.drawSisyphusAndBoulder(width, height)
+    characterRenderer.drawDeliveryBird(width, height)
+    drawTrees(width, height, 'fg')
     obstacleRenderer.drawOverlayObstacles(width, height)
     characterRenderer.drawExclamations(width, height)
     characterRenderer.drawThoughtBubble(width, height)
     characterRenderer.drawFinalThought(width, height)
+    drawIdleBubbles(width, height)
     characterRenderer.drawCountdown(width, height)
   }
 

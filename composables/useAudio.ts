@@ -1,6 +1,9 @@
+import { ref } from 'vue'
+
 type SoundType = 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup' | 'bark' | 'thunder' | 'laser'
 
 let audioCtx: AudioContext | null = null
+const muted = ref(false)
 
 export function useAudio() {
   function initAudio() {
@@ -9,8 +12,12 @@ export function useAudio() {
     }
   }
 
+  function toggleMute() {
+    muted.value = !muted.value
+  }
+
   function play8BitSound(type: SoundType) {
-    if (!audioCtx) return
+    if (!audioCtx || muted.value) return
     const osc = audioCtx.createOscillator()
     const gain = audioCtx.createGain()
     osc.connect(gain)
@@ -117,5 +124,5 @@ export function useAudio() {
     if (audioCtx) audioCtx.close()
   }
 
-  return { initAudio, play8BitSound, closeAudio }
+  return { initAudio, play8BitSound, closeAudio, muted, toggleMute }
 }

@@ -6,10 +6,12 @@
 export const BOULDER_RADIUS = 26
 export const BOULDER_GROUND_OFFSET = 3       // gap between boulder bottom and hill surface
 export const HEAD_RADIUS = 6
-export const BODY_LENGTH = 28
+export const BODY_LENGTH = 16                 // torso length (short for proportional IK legs)
 export const UPPER_ARM = 14
 export const FOREARM = 14
-export const HIP_HEIGHT = 18                 // hip above ground
+export const HIP_HEIGHT = 30                 // hip above ground (tall for longer IK legs)
+export const THIGH_LENGTH = 20               // upper leg segment
+export const SHIN_LENGTH = 18                // lower leg segment
 export const SHOULDER_HEAD_GAP = 4           // space between shoulder and head bottom
 export const RENDER_GAP_BASE = 40            // base horizontal gap between feet and boulder
 export const TUMBLE_OFFSET_X = 70            // horizontal offset for tumbling Sisyphus
@@ -113,6 +115,36 @@ export const FONTS = {
   exclamationBold: 'bold 14px monospace',
 } as const
 
+/** Extract the numeric pixel size from a CSS font string (e.g. 'bold 14px monospace' → 14) */
+export function fontSizePx(font: string): number {
+  const match = font.match(/(\d+)px/)
+  return match ? parseInt(match[1]) : BUBBLE_DEFAULTS.fallbackFontSize
+}
+
+// ── Bubble Defaults ─────────────────────────────────────────────────
+export const BUBBLE_DEFAULTS = {
+  lineHeightPadding: 4,
+  fallbackFontSize: 12,
+  padding: 10,
+  maxWidth: 180,
+  offsetX: 20,
+  offsetY: -20,
+  edgeMargin: 5,
+  strokeWidth: 2,
+  thoughtRadius: 12,
+  speechRadius: 8,
+  tailInset: 10,
+  tailHalfWidth: 6,
+  tailGap: 1,
+  tailSpeakerOffset: 5,
+  dotStartOffset: 5,
+  dotNearDist: 10,
+  dotNearRadius: 5,
+  dotFarDist: 22,
+  dotFarRadius: 3,
+  textLineOffset: 0.8,
+} as const
+
 // ── Timing (seconds) ────────────────────────────────────────────────
 export const TIMING = {
   // Sound intervals
@@ -125,6 +157,7 @@ export const TIMING = {
   boulderExclamationDuration: 2,           // base; + random * 2
   sisyphusExclamationDuration: 3,          // base; + random * 2
   prometheusExchangeDuration: 3.5,
+  prometheusExchangePause: 0.5,            // gap between sequential exchanges
   thoughtDuration: 4,
   philosopherThoughtCycle: 5,
 
@@ -164,6 +197,14 @@ export const TIMING = {
   alienLaserDuration: 3.5,
   attackBirdsDuration: 3,
 
+  // Flat idle harassment
+  idleBirdDelay: 3,                           // seconds before Lou swoops in (TODO: restore to 10)
+  idleBoulderThoughtDelay: 5,                // seconds before boulder thought bubble (TODO: restore to 15)
+  idleGaryDelay: 10,                          // seconds before Gary arrives (TODO: restore to 30)
+  idleDialogueLineDuration: 4,               // seconds each dialogue line shows
+  idleDialoguePause: 0.5,                    // gap between sequential lines
+  garyExitThoughtDuration: 4,                // Gary's departing thought bubble duration
+
   // Mountain goat blink
   blinkIntervalBase: 3,                   // + random * 5
   blinkIntervalRandom: 5,
@@ -188,6 +229,34 @@ export const PHYSICS = {
   // Bounce
   maxBounceAmplitude: 8,
   bounceVelocityScale: 0.008,
+
+  // Rollback flat friction
+  rollbackFlatFriction: 0.993,             // gentle velocity decay per frame on flat (like rolling into sand)
+  rollbackScreenEdgeMargin: 200,           // boulder stops this many px from screen edge
+  deliveryBirdSpeed: 160,                  // px/s horizontal
+  deliveryBirdCruiseAltitude: -180,        // y offset from ground (negative = high above)
+  deliveryBirdDropHeight: 40,              // altitude above ground for the drop
+  deliveryBirdGrabPause: 0.4,             // seconds bird pauses to grab body
+  rollbackStopVelocity: 5,               // velocity threshold to consider boulder stopped
+
+  // Idle bird flight speeds (px/s)
+  louFlyAwaySpeedX: 80,                   // Lou horizontal exit speed
+  louFlyAwaySpeedY: 40,                   // Lou vertical exit speed (positive = up)
+  louApproachRate: 2,                      // Lou approach interpolation rate
+  louCircleBaseRadius: 60,                 // Lou circling base radius
+  louCircleRadiusVariance: 25,             // Lou circling radius oscillation
+  louSwoopTrigger: 0.8,                   // sin threshold to trigger swat
+  garyFlyAwaySpeedX: 35,                  // Gary horizontal exit speed (slow — thought bubble must be readable)
+  garyFlyAwaySpeedY: 15,                  // Gary vertical exit speed (positive = up)
+  garyApproachRate: 1.2,                   // Gary approach interpolation rate (slower = more leisurely)
+  garyLandingOffset: 70,                   // px to left of player where Gary lands
+  garyLandingPhaseMin: 1.5,               // min seconds before Gary can land
+
+  // Swat animation
+  swatDuration: 0.4,                       // seconds for arm swat animation
+
+  // Return push (after continue, Sis pushes boulder back to start)
+  returnPushSpeed: 120,                    // px/s — Sis pushes boulder back toward start
 } as const
 
 // ── Environment Spawning ────────────────────────────────────────────

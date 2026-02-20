@@ -11,6 +11,8 @@
       :displayLevel="displayLevel"
       :progressPercent="progressPercent"
       :levelAnnouncement="levelAnnouncement"
+      :muted="muted"
+      @toggle-mute="toggleMute"
     />
 
     <StartScreen
@@ -73,7 +75,7 @@ const {
 } = useGameState()
 
 const { getLevelAtDistance, getAngleAtDistance, getHeightAtWorldDistance, getHillYAtScreenX } = usePhysics()
-const { initAudio, play8BitSound, closeAudio } = useAudio()
+const { initAudio, play8BitSound, closeAudio, muted, toggleMute } = useAudio()
 const { handleClick, handleKeyDown, registerTap } = useInput(gameState, intensity, world)
 
 const { initCanvas, resizeCanvas, render } = useRenderer({
@@ -195,13 +197,21 @@ onMounted(() => {
     }
   }
 
-  window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('keydown', onKeyDown)
   window.addEventListener('resize', resizeCanvas)
   fetchLeaderboard()
 })
 
+function onKeyDown(e: KeyboardEvent) {
+  if (e.key === 'm' || e.key === 'M') {
+    toggleMute()
+    return
+  }
+  handleKeyDown(e)
+}
+
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeyDown)
+  window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('resize', resizeCanvas)
   loop.stopLoop()
   closeAudio()

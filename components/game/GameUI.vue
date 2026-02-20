@@ -28,6 +28,11 @@
       </div>
     </div>
 
+    <!-- Mute Toggle -->
+    <button class="mute-btn" v-if="showGameUI" @click="$emit('toggle-mute')">
+      {{ muted ? 'MUTED' : 'SOUND' }}
+    </button>
+
     <!-- Level Announcement -->
     <div class="level-announcement" v-if="levelAnnouncement">
       <div class="level-text">{{ levelAnnouncement }}</div>
@@ -45,7 +50,10 @@ defineProps<{
   displayLevel: number
   progressPercent: number
   levelAnnouncement: string
+  muted: boolean
 }>()
+
+defineEmits<{ 'toggle-mute': [] }>()
 </script>
 
 <style scoped>
@@ -86,6 +94,28 @@ defineProps<{
 .progress-fill { height: 100%; background: linear-gradient(90deg, #4ade80, #ffd700); transition: width 0.2s; }
 .progress-marker { position: absolute; top: 0; bottom: 0; width: 1px; background: #666; }
 .progress-levels { display: flex; justify-content: space-between; font-size: 8px; color: #666; margin-top: 2px; }
+
+.mute-btn {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: transparent;
+  border: 1px solid #666;
+  color: #888;
+  padding: 4px 12px;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all 0.2s;
+  letter-spacing: 2px;
+}
+
+.mute-btn:hover {
+  border-color: #fff;
+  color: #fff;
+}
 
 .level-announcement {
   position: absolute;

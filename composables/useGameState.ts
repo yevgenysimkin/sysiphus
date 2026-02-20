@@ -5,12 +5,12 @@ import dialogue from '~/game.dialogue.json'
 import obstacleConfig from '~/game.obstacles.json'
 import { boulderExclamations, sisyphusExclamations, sassyComments, finalThoughts } from '~/game/content'
 
-export type GameState = 'start' | 'playing' | 'countdown' | 'crushing' | 'rolling_back' | 'rolling_over' | 'continue_prompt' | 'getting_up' | 'final_thought' | 'credits' | 'gameover'
+export type GameState = 'start' | 'playing' | 'countdown' | 'crushing' | 'rolling_back' | 'rolling_over' | 'continue_prompt' | 'getting_up' | 'returning' | 'final_thought' | 'credits' | 'gameover'
 
 // Environment types
 export interface Bird { x: number; y: number; vx: number; vy: number; flapPhase: number }
 export interface Cloud { x: number; y: number; speed: number; size: number }
-export interface Tree { worldX: number; size: number; type: 'pine' | 'oak' | 'dead' }
+export interface Tree { worldX: number; size: number; type: 'pine' | 'oak' | 'dead'; layer: 'bg' | 'fg' }
 export interface GrassTuft { worldX: number; height: number; blades: number }
 
 export type ObstacleType =
@@ -130,7 +130,7 @@ export function useGameState() {
   const score = ref(0)
   const displayScore = ref(0)
   const finalScore = ref(0)
-  const intensity = ref(PHYSICS.initialIntensity)
+  const intensity = ref(0)
   const leaderboard = ref<{ initials: string; score: number }[]>([])
   const continueTimer = ref(5)
   const continueFromPeak = ref(false)
@@ -153,7 +153,7 @@ export function useGameState() {
   const progressPercent = ref(0)
 
   const showGameUI = computed(() => {
-    return ['playing', 'countdown', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up'].includes(gameState.value)
+    return ['playing', 'countdown', 'crushing', 'rolling_back', 'rolling_over', 'continue_prompt', 'getting_up', 'returning'].includes(gameState.value)
   })
 
   // Mutable world state (non-reactive for performance - updated every frame)
@@ -201,6 +201,19 @@ export function useGameState() {
     lastThoughtTime: 0,
     levelPhrasesSaid: {} as Record<number, Set<number>>,
 
+    // Flat terrain idle
+    flatIdleTime: 0,
+    idleBirdSent: false,
+    idleBoulderThought: false,
+    isIdle: false,
+    swatPhase: 0,                  // Sisyphus arm-swat animation phase (0 = not swatting)
+    idleBird: null as { x: number; y: number; phase: number; swoopPhase: number; targetX: number; flyingAway: boolean; flyAwayX: number; flyAwayY: number } | null,
+
+    // Gary bird (second idle bird for dialogue)
+    garyBird: null as { x: number; y: number; phase: number; landed: boolean; flyingAway: boolean; flyAwayX: number; flyAwayY: number; thought: string; thoughtTimer: number } | null,
+    garySent: false,
+    idleDialogue: null as { exchanges: { speaker: string; text: string }[]; currentIndex: number; timer: number; pauseTimer: number } | null,
+
     // Getting up
     gettingUpPhase: 0,
     currentSassyComment: '',
@@ -231,11 +244,27 @@ export function useGameState() {
     prometheusGreeted: false,
     prometheusDialogueIndex: 0,
     prometheusNextExchange: 0,
+    prometheusExchangePauseTimer: 0,
     prometheusActiveExchange: null as { speaker: string; text: string; timer: number; fadeIn: number } | null,
     spaceshipX: -200,
     spaceshipY: 100,
     spaceshipActive: false,
     spaceshipTimer: 0,
+
+    // Delivery bird (carries Sisyphus body after rollback)
+    // Phases: 'fetch' → fly to body, 'grab' → brief pause, 'carry' → fly to boulder, 'drop' → release, 'exit' → fly away
+    deliveryBird: {
+      active: false,
+      phase: 'fetch' as 'fetch' | 'grab' | 'carry' | 'drop' | 'exit',
+      x: 0,
+      y: 0,               // altitude offset (negative = above ground)
+      pickupX: 0,         // world X of body to pick up
+      dropX: 0,           // world X of drop point (near boulder)
+      grabTimer: 0,
+      bodyPickedUp: false, // hides the crushed body from rolling_back renderer
+      dropComplete: false, // shows flattened body at drop point
+      bloodDrops: [] as { x: number; y: number; vy: number; alpha: number }[],
+    },
   }
 
   function triggerBoulderExclamation() {
@@ -251,7 +280,7 @@ export function useGameState() {
   function resetGameState(getLevelAtDistance: (dist: number) => number) {
     score.value = 0
     displayScore.value = 0
-    intensity.value = PHYSICS.initialIntensity
+    intensity.value = 0
 
     const startDist = (typeof window !== 'undefined' && (window as any).__sisyphusStartDistance) || 0
     world.boulderDistance = startDist
@@ -296,6 +325,7 @@ export function useGameState() {
     world.prometheusGreeted = false
     world.prometheusDialogueIndex = Math.floor(Math.random() * dialogue.prometheusDialogues.length)
     world.prometheusNextExchange = 0
+    world.prometheusExchangePauseTimer = 0
     world.prometheusActiveExchange = null
     world.sisyphusTumbleRotation = 0
     world.sisyphusTumbleX = 0
@@ -310,6 +340,19 @@ export function useGameState() {
     world.sisyphusExclamationTimer = 0
     world.lastExclamationTime = 0
     world.countdownTimer = 0
+    world.deliveryBird.active = false
+    world.deliveryBird.phase = 'fetch'
+    world.deliveryBird.bodyPickedUp = false
+    world.deliveryBird.dropComplete = false
+    world.deliveryBird.bloodDrops = []
+    world.flatIdleTime = 0
+    world.idleBirdSent = false
+    world.idleBoulderThought = false
+    world.swatPhase = 0
+    world.idleBird = null
+    world.garyBird = null
+    world.garySent = false
+    world.idleDialogue = null
 
     world.clouds = []
     for (let i = 0; i < ENVIRONMENT.cloudCount; i++) {
@@ -326,8 +369,9 @@ export function useGameState() {
       const worldX = Math.random() * PEAK_DISTANCE * 2
       world.trees.push({
         worldX,
-        size: 20 + Math.random() * 40,
-        type: Math.random() > 0.7 ? 'pine' : Math.random() > 0.5 ? 'oak' : 'dead'
+        size: 120 + Math.random() * 180,
+        type: Math.random() > 0.7 ? 'pine' : Math.random() > 0.5 ? 'oak' : 'dead',
+        layer: Math.random() < 0.3 ? 'fg' : 'bg',
       })
     }
 

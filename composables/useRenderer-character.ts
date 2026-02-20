@@ -3,7 +3,8 @@ import type { GameState } from './useGameState'
 import { PEAK_DISTANCE } from './usePhysics'
 import {
   BOULDER_RADIUS, BOULDER_GROUND_OFFSET, HEAD_RADIUS, BODY_LENGTH,
-  UPPER_ARM, FOREARM, HIP_HEIGHT, SHOULDER_HEAD_GAP, RENDER_GAP_BASE,
+  UPPER_ARM, FOREARM, HIP_HEIGHT, THIGH_LENGTH, SHIN_LENGTH,
+  SHOULDER_HEAD_GAP, RENDER_GAP_BASE,
   TUMBLE_OFFSET_X, COLORS, FONTS, TIMING,
 } from '~/game/constants'
 
@@ -43,6 +44,21 @@ interface CharacterRendererDeps {
     gettingUpPhase: number
     currentSassyComment: string
     countdownTimer: number
+    flatIdleTime: number
+    isIdle: boolean
+    swatPhase: number
+    deliveryBird: {
+      active: boolean
+      phase: 'fetch' | 'grab' | 'carry' | 'drop' | 'exit'
+      x: number
+      y: number
+      pickupX: number
+      dropX: number
+      grabTimer: number
+      bodyPickedUp: boolean
+      dropComplete: boolean
+      bloodDrops: { x: number; y: number; vy: number; alpha: number }[]
+    }
   }
   hillY: (screenX: number, height: number) => number
   drawBubble: (
@@ -98,12 +114,15 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     const boulderScreenX = world.boulderDistance - world.worldScrollX
     const boulderY = hillY(boulderScreenX, height) - 29
 
-    if (world.currentBoulderExclamation && world.boulderExclamationTimer > 0 &&
-        (gameState.value === 'rolling_back' || gameState.value === 'rolling_over' || gameState.value === 'crushing')) {
-      const alpha = Math.min(1, world.boulderExclamationTimer)
-      drawBubble(boulderScreenX, boulderY, world.currentBoulderExclamation, 'speech', {
-        alpha, font: FONTS.exclamationBold, offsetX: -10, offsetY: -50
-      })
+    if (world.currentBoulderExclamation && world.boulderExclamationTimer > 0) {
+      const validStates: GameState[] = ['rolling_back', 'rolling_over', 'crushing', 'playing']
+      if (validStates.includes(gameState.value)) {
+        const alpha = Math.min(1, world.boulderExclamationTimer)
+        const bubbleType = gameState.value === 'playing' ? 'thought' : 'speech'
+        drawBubble(boulderScreenX, boulderY - 30, world.currentBoulderExclamation, bubbleType, {
+          alpha, font: FONTS.exclamationBold, offsetX: -20, offsetY: -50
+        })
+      }
     }
 
     if (world.currentSisyphusExclamation && world.sisyphusExclamationTimer > 0 && gameState.value === 'rolling_over') {
@@ -136,7 +155,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     const boulderScreenX = world.boulderDistance - world.worldScrollX
     const boulderY = hillY(boulderScreenX, height) - 29
 
-    drawBubble(boulderScreenX, boulderY, world.currentFinalThought + '\n- The Boulder', 'thought', {
+    drawBubble(boulderScreenX, boulderY, world.currentFinalThought, 'thought', {
       alpha, font: FONTS.xl, maxWidth: 220, offsetX: -60, offsetY: -60
     })
   }
@@ -248,8 +267,8 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
 
     ctx.restore()
 
-    // Rollback - Sisyphus lying flat at crush position
-    if (gameState.value === 'rolling_back') {
+    // Rollback - Sisyphus lying flat at crush position (hidden once delivery bird picks him up)
+    if (gameState.value === 'rolling_back' && !world.deliveryBird.bodyPickedUp) {
       const crushScreenX = world.sisyphusCrushWorldX - world.worldScrollX
       if (crushScreenX > -50 && crushScreenX < (gameCanvas.value?.width || 800) + 50) {
         drawFlattenedBody(ctx, crushScreenX, hillY(crushScreenX, height), world.pushDir)
@@ -502,10 +521,16 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 2.5
 
+    // Realistic walking stride — feet alternate: one forward, one back
+    const stride = 14
     const legCycle = Math.sin(world.legPhase)
-    const footBackX = feetScreenX - 10 - Math.abs(legCycle) * 8
-    const footFrontX = feetScreenX + 8 + Math.abs(Math.sin(world.legPhase + Math.PI)) * 6
-    const footY = renderFeetY
+    const foot1X = feetScreenX + legCycle * stride
+    const foot2X = feetScreenX - legCycle * stride
+    // Lift foot slightly mid-stride for a natural step
+    const foot1Lift = Math.max(0, Math.cos(world.legPhase)) * 4
+    const foot2Lift = Math.max(0, Math.cos(world.legPhase + Math.PI)) * 4
+    const foot1Y = renderFeetY - foot1Lift
+    const foot2Y = renderFeetY - foot2Lift
 
     const hipX = feetScreenX
     const hipY = renderFeetY - HIP_HEIGHT
@@ -533,16 +558,41 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     const perpX = -armDirY
     const perpY = armDirX
 
-    // Legs
-    ctx.beginPath()
-    ctx.moveTo(hipX, hipY)
-    ctx.lineTo(footBackX, footY)
-    ctx.stroke()
+    // Legs with knee bend (two-bone IK)
+    const feet = [{ x: foot1X, y: foot1Y }, { x: foot2X, y: foot2Y }]
+    for (const foot of feet) {
+      const dx = foot.x - hipX
+      const dy = foot.y - hipY
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const totalLen = THIGH_LENGTH + SHIN_LENGTH
 
-    ctx.beginPath()
-    ctx.moveTo(hipX, hipY)
-    ctx.lineTo(footFrontX, footY)
-    ctx.stroke()
+      let kneeX: number, kneeY: number
+      if (dist >= totalLen) {
+        // Fully extended — knee at midpoint along line
+        const midRatio = THIGH_LENGTH / totalLen
+        kneeX = hipX + dx * midRatio
+        kneeY = hipY + dy * midRatio
+      } else {
+        // Two-bone IK: compute knee position
+        const cosAngle = (THIGH_LENGTH * THIGH_LENGTH + dist * dist - SHIN_LENGTH * SHIN_LENGTH) / (2 * THIGH_LENGTH * dist)
+        const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)))
+        const baseAngle = Math.atan2(dy, dx)
+        // Knee bends forward (positive X in local/mirrored space = toward boulder)
+        // Subtract angle so knee pushes toward +X (forward), not backward
+        kneeX = hipX + Math.cos(baseAngle - angle) * THIGH_LENGTH
+        kneeY = hipY + Math.sin(baseAngle - angle) * THIGH_LENGTH
+      }
+
+      ctx.beginPath()
+      ctx.moveTo(hipX, hipY)
+      ctx.lineTo(kneeX, kneeY)
+      ctx.stroke()
+
+      ctx.beginPath()
+      ctx.moveTo(kneeX, kneeY)
+      ctx.lineTo(foot.x, foot.y)
+      ctx.stroke()
+    }
 
     // Torso
     ctx.beginPath()
@@ -550,31 +600,72 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     ctx.lineTo(shoulderX, shoulderY)
     ctx.stroke()
 
-    // Arms — two arms with alternating push/pull motion (frozen during countdown)
-    const armAnimating = gameState.value === 'playing'
-    for (let armIdx = 0; armIdx < 2; armIdx++) {
-      const phaseOffset = armIdx * Math.PI // opposite phase
-      const bendAmount = armAnimating ? Math.max(1, 4 + Math.sin(world.gameTime * 6 + phaseOffset) * 5) : 4
-      const yOffset = armIdx === 0 ? -3 : 3
+    // Arms — two arms with alternating push/pull motion (frozen when not moving)
+    const armAnimating = gameState.value === 'playing' && !world.isIdle
+    const isSwatting = world.swatPhase > 0
 
+    if (isSwatting) {
+      // Swatting at bird — one arm swipes overhead, other stays on boulder
+      const swatProgress = 1 - (world.swatPhase / 0.4) // 0→1 over animation
+      const swatAngle = Math.sin(swatProgress * Math.PI) * 1.8 - 0.5 // arc overhead
+
+      // Swatting arm (arm 0) — swipes above head
+      const swatElbowX = shoulderX - Math.cos(swatAngle) * UPPER_ARM
+      const swatElbowY = shoulderY - Math.sin(swatAngle) * UPPER_ARM
+      const swatHandX = swatElbowX - Math.cos(swatAngle + 0.5) * FOREARM
+      const swatHandY = swatElbowY - Math.sin(swatAngle + 0.5) * FOREARM
+
+      ctx.beginPath()
+      ctx.moveTo(shoulderX, shoulderY - 3)
+      ctx.lineTo(swatElbowX, swatElbowY - 3)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(swatElbowX, swatElbowY - 3)
+      ctx.lineTo(swatHandX, swatHandY - 3)
+      ctx.stroke()
+
+      // Other arm stays on boulder (arm 1, normal rendering)
+      const bendAmount = 4
       const elbowX = shoulderX + armDirX * UPPER_ARM + perpX * bendAmount
       const elbowY = shoulderY + armDirY * UPPER_ARM + perpY * bendAmount
-
       const eToBoulderDx = localBoulderCenterX - elbowX
       const eToBoulderDy = localBoulderCenterY - elbowY
       const eToBoulderDist = Math.sqrt(eToBoulderDx * eToBoulderDx + eToBoulderDy * eToBoulderDy) || 1
       const handX = elbowX + (eToBoulderDx / eToBoulderDist) * FOREARM
       const handY = elbowY + (eToBoulderDy / eToBoulderDist) * FOREARM
-
       ctx.beginPath()
-      ctx.moveTo(shoulderX, shoulderY + yOffset)
-      ctx.lineTo(elbowX, elbowY + yOffset)
+      ctx.moveTo(shoulderX, shoulderY + 3)
+      ctx.lineTo(elbowX, elbowY + 3)
       ctx.stroke()
-
       ctx.beginPath()
-      ctx.moveTo(elbowX, elbowY + yOffset)
-      ctx.lineTo(handX, handY + yOffset)
+      ctx.moveTo(elbowX, elbowY + 3)
+      ctx.lineTo(handX, handY + 3)
       ctx.stroke()
+    } else {
+      for (let armIdx = 0; armIdx < 2; armIdx++) {
+        const phaseOffset = armIdx * Math.PI // opposite phase
+        const bendAmount = armAnimating ? Math.max(1, 4 + Math.sin(world.gameTime * 6 + phaseOffset) * 5) : 4
+        const yOffset = armIdx === 0 ? -3 : 3
+
+        const elbowX = shoulderX + armDirX * UPPER_ARM + perpX * bendAmount
+        const elbowY = shoulderY + armDirY * UPPER_ARM + perpY * bendAmount
+
+        const eToBoulderDx = localBoulderCenterX - elbowX
+        const eToBoulderDy = localBoulderCenterY - elbowY
+        const eToBoulderDist = Math.sqrt(eToBoulderDx * eToBoulderDx + eToBoulderDy * eToBoulderDy) || 1
+        const handX = elbowX + (eToBoulderDx / eToBoulderDist) * FOREARM
+        const handY = elbowY + (eToBoulderDy / eToBoulderDist) * FOREARM
+
+        ctx.beginPath()
+        ctx.moveTo(shoulderX, shoulderY + yOffset)
+        ctx.lineTo(elbowX, elbowY + yOffset)
+        ctx.stroke()
+
+        ctx.beginPath()
+        ctx.moveTo(elbowX, elbowY + yOffset)
+        ctx.lineTo(handX, handY + yOffset)
+        ctx.stroke()
+      }
     }
 
     // Head
@@ -598,8 +689,158 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     ctx.restore()
   }
 
+  function drawDeliveryBird(width: number, height: number) {
+    const ctx = getCtx()
+    if (!ctx) return
+
+    const bird = world.deliveryBird
+
+    // Draw dropped body on ground (persists after drop until continue_prompt)
+    if (bird.dropComplete) {
+      const dropScreenX = bird.dropX - world.worldScrollX
+      const dropGroundY = hillY(dropScreenX, height)
+      drawFlattenedBody(ctx, dropScreenX, dropGroundY, world.pushDir)
+    }
+
+    // Draw blood drops (world-space, rendered even after bird exits)
+    if (bird.bloodDrops.length > 0) {
+      bird.bloodDrops.forEach(drop => {
+        const dropScreenX = drop.x - world.worldScrollX
+        const groundY = hillY(dropScreenX, height)
+        const dropY = groundY + drop.y
+        ctx.fillStyle = `rgba(139, 0, 0, ${drop.alpha})`
+        ctx.beginPath()
+        // Teardrop shape
+        ctx.ellipse(dropScreenX, dropY, 1.5, 2.5, 0, 0, Math.PI * 2)
+        ctx.fill()
+      })
+    }
+
+    if (!bird.active) return
+
+    const screenX = bird.x - world.worldScrollX
+    const groundY = hillY(screenX, height)
+    const birdY = groundY + bird.y  // bird.y is negative = above ground
+
+    ctx.save()
+    ctx.translate(screenX, birdY)
+
+    // Large bird
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 2.5
+    const flapPhase = world.gameTime * 6
+    const wingY = Math.sin(flapPhase) * 20
+
+    // Body
+    ctx.beginPath()
+    ctx.ellipse(0, 0, 18, 7, 0, 0, Math.PI * 2)
+    ctx.stroke()
+
+    // Wings — big sweeping
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(-8, 0)
+    ctx.quadraticCurveTo(-22, wingY - 16, -34, wingY - 10)
+    ctx.moveTo(8, 0)
+    ctx.quadraticCurveTo(22, wingY - 16, 34, wingY - 10)
+    ctx.stroke()
+
+    // Beak — hooked
+    const flyDir = bird.dropX > bird.x ? 1 : -1
+    ctx.beginPath()
+    ctx.moveTo(16 * flyDir, -3)
+    ctx.lineTo(24 * flyDir, 0)
+    ctx.lineTo(22 * flyDir, 4)
+    ctx.stroke()
+
+    // Tail
+    ctx.beginPath()
+    ctx.moveTo(14 * -flyDir, 0)
+    ctx.lineTo(22 * -flyDir, -6)
+    ctx.moveTo(14 * -flyDir, 0)
+    ctx.lineTo(22 * -flyDir, 3)
+    ctx.stroke()
+
+    // Long talons (always visible)
+    ctx.strokeStyle = '#ccc'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    // Left talon — long segmented leg
+    ctx.moveTo(-5, 7)
+    ctx.lineTo(-6, 20)
+    ctx.lineTo(-4, 30)
+    // Claw
+    ctx.lineTo(-8, 34)
+    ctx.moveTo(-4, 30)
+    ctx.lineTo(-1, 35)
+    ctx.moveTo(-4, 30)
+    ctx.lineTo(-5, 36)
+    // Right talon
+    ctx.moveTo(5, 7)
+    ctx.lineTo(6, 20)
+    ctx.lineTo(4, 30)
+    // Claw
+    ctx.lineTo(8, 34)
+    ctx.moveTo(4, 30)
+    ctx.lineTo(1, 35)
+    ctx.moveTo(4, 30)
+    ctx.lineTo(5, 36)
+    ctx.stroke()
+
+    // Carried Sisyphus body (horizontal, held by midriff, limbs dangling)
+    if (bird.bodyPickedUp && !bird.dropComplete) {
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 2
+      const sway = Math.sin(world.gameTime * 3) * 2
+
+      // Body is horizontal — talons grip the midriff (y=36 below bird)
+      const midY = 36
+
+      // Torso — horizontal line
+      ctx.beginPath()
+      ctx.moveTo(-18 + sway, midY)
+      ctx.lineTo(18 + sway, midY)
+      ctx.stroke()
+
+      // Head — at one end
+      ctx.beginPath()
+      ctx.arc(-18 + sway - HEAD_RADIUS, midY + sway * 0.3, HEAD_RADIUS, 0, Math.PI * 2)
+      ctx.stroke()
+
+      // Arms dangling down from shoulders
+      ctx.beginPath()
+      ctx.moveTo(-10 + sway, midY)
+      ctx.lineTo(-14 + sway, midY + 18)
+      ctx.moveTo(4 + sway, midY)
+      ctx.lineTo(8 + sway, midY + 20)
+      ctx.stroke()
+
+      // Legs dangling down from hips
+      ctx.beginPath()
+      ctx.moveTo(14 + sway, midY)
+      ctx.lineTo(10 + sway, midY + 22)
+      ctx.moveTo(18 + sway, midY)
+      ctx.lineTo(22 + sway, midY + 20)
+      ctx.stroke()
+
+      // Blood dripping from talons
+      ctx.fillStyle = COLORS.bloodRed
+      const drip1 = (world.gameTime * 2) % 1
+      const drip2 = (world.gameTime * 2 + 0.5) % 1
+      ctx.beginPath()
+      ctx.ellipse(-4, midY + drip1 * 8, 1, 2, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.beginPath()
+      ctx.ellipse(5, midY + drip2 * 6, 1, 1.5, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    ctx.restore()
+  }
+
   return {
     drawSisyphusAndBoulder,
+    drawDeliveryBird,
     drawExclamations,
     drawThoughtBubble,
     drawFinalThought,
