@@ -3,6 +3,7 @@ import type { GameState } from './useGameState'
 import type { Obstacle } from './useGameState'
 import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, CONSTANT_SPEED, METER_DRAIN_RATES, LEVEL_DISTANCES } from './usePhysics'
 import { createObstacleUpdater } from './useGameLoop-obstacles'
+import { TIMING, PHYSICS, ENVIRONMENT, TUMBLE_OFFSET_X } from '~/game/constants'
 import dialogue from '~/game.dialogue.json'
 
 interface GameLoopDeps {
@@ -104,6 +105,12 @@ export function useGameLoop(deps: GameLoopDeps) {
     return world.pushDir > 0 ? world.boulderDistance : 2 * PEAK_DISTANCE - world.boulderDistance
   }
 
+  /** Update camera scroll position based on boulder position */
+  function updateScroll(): void {
+    const screenWidth = gameCanvas.value?.width || 800
+    world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
+  }
+
   /** Clamp boulderDistance toward the current "bottom" */
   function clampToBottom(): void {
     if (world.pushDir > 0) {
@@ -153,7 +160,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       const triggerAt = (i + 1) / (K + 1)
       if (progress >= triggerAt) {
         said.add(i)
-        world.currentThought = { text: phrases[i], timer: 4, fadeIn: 0 }
+        world.currentThought = { text: phrases[i], timer: TIMING.thoughtDuration, fadeIn: 0 }
         world.lastThoughtTime = world.gameTime
         return
       }
@@ -180,7 +187,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       world.prometheusActiveExchange = {
         speaker: nextExchange.speaker,
         text: nextExchange.text,
-        timer: 3.5,
+        timer: TIMING.prometheusExchangeDuration,
         fadeIn: 0
       }
       world.prometheusNextExchange++
@@ -197,13 +204,13 @@ export function useGameLoop(deps: GameLoopDeps) {
   }
 
   function maybeSpawnEvents() {
-    if (!world.spaceshipActive && world.worldDistance > 100 && Math.random() < 0.002) {
+    if (!world.spaceshipActive && world.worldDistance > ENVIRONMENT.spaceshipMinDistance && Math.random() < ENVIRONMENT.spaceshipSpawnChance) {
       world.spaceshipActive = true
       world.spaceshipX = -100
       world.spaceshipY = 60 + Math.random() * 80
       world.spaceshipTimer = 0
     }
-    if (world.birds.length < 5 && Math.random() < 0.02) {
+    if (world.birds.length < ENVIRONMENT.maxBirds && Math.random() < ENVIRONMENT.birdSpawnChance) {
       spawnBird()
     }
   }
@@ -248,18 +255,15 @@ export function useGameLoop(deps: GameLoopDeps) {
     // Constant speed movement
     world.boulderDistance += CONSTANT_SPEED * dt * pd
     world.worldDistance = world.boulderDistance - 40 * pd
-    score.value += CONSTANT_SPEED * dt * 0.125
+    score.value += CONSTANT_SPEED * dt * PHYSICS.scoreMultiplier
     displayScore.value = score.value
-
-    const canvas = gameCanvas.value
-    const screenWidth = canvas?.width || 800
-    world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
+    updateScroll()
 
     const newLevel = getLevelAtDistance(effectiveDist())
     if (newLevel !== currentLevel.value) {
       if (newLevel > currentLevel.value) {
         levelAnnouncement.value = `LEVEL ${newLevel}!`
-        world.levelAnnouncementTimer = 2
+        world.levelAnnouncementTimer = TIMING.levelAnnouncementDuration
         play8BitSound('levelup')
       }
       currentLevel.value = newLevel
@@ -283,24 +287,22 @@ export function useGameLoop(deps: GameLoopDeps) {
     world.crushTime += dt
 
     // Brief stagger (0.2s), then boulder rolls backward (downhill)
-    if (world.crushTime > 0.2) {
-      const elapsed = world.crushTime - 0.2
-      const rollSpeed = 40 + elapsed * 200 // accelerating downhill
+    if (world.crushTime > TIMING.crushStaggerDelay) {
+      const elapsed = world.crushTime - TIMING.crushStaggerDelay
+      const rollSpeed = PHYSICS.crushRollAccelBase + elapsed * PHYSICS.crushRollAccelRate
       world.boulderDistance -= rollSpeed * dt * pd
       clampToBottom()
-      world.boulderRotation -= rollSpeed * dt * 0.02 * pd
+      world.boulderRotation -= rollSpeed * dt * PHYSICS.boulderRotationScale * pd
 
       // Flatten Sisyphus when boulder rolls back over his position
-      if ((world.sisyphusCrushWorldX - world.boulderDistance) * pd >= -30) {
+      if ((world.sisyphusCrushWorldX - world.boulderDistance) * pd >= PHYSICS.crushFlattenOffset) {
         world.sisyphusFlattened = true
       }
 
-      const canvas = gameCanvas.value
-      const screenWidth = canvas?.width || 800
-      world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
+      updateScroll()
     }
 
-    if (world.crushTime > 1.0) {
+    if (world.crushTime > TIMING.crushToRollbackDelay) {
       gameState.value = 'rolling_back'
       world.boulderVelocity = 80
       triggerBoulderExclamation()
@@ -309,7 +311,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
   function updateRollingBack(dt: number) {
     const pd = world.pushDir
-    world.boulderVelocity += 150 * dt
+    world.boulderVelocity += PHYSICS.rollbackAcceleration * dt
     world.boulderDistance -= world.boulderVelocity * dt * pd
     clampToBottom()
 
@@ -320,20 +322,17 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     displayLevel.value = getLevelAtDistance(eDist)
     progressPercent.value = Math.min(100, Math.max(0, (eDist / PEAK_DISTANCE) * 100))
+    updateScroll()
 
-    const canvas = gameCanvas.value
-    const screenWidth = canvas?.width || 800
-    world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
-
-    if (world.gameTime - world.lastRollSoundTime > 0.12 && world.boulderVelocity > 5) {
+    if (world.gameTime - world.lastRollSoundTime > TIMING.rollSoundInterval && world.boulderVelocity > 5) {
       play8BitSound('roll')
       world.lastRollSoundTime = world.gameTime
     }
 
-    world.boulderRotation -= world.boulderVelocity * dt * 0.02 * pd
+    world.boulderRotation -= world.boulderVelocity * dt * PHYSICS.boulderRotationScale * pd
 
     world.boulderExclamationTimer -= dt
-    if (world.boulderExclamationTimer <= 0 && world.boulderVelocity > 20) {
+    if (world.boulderExclamationTimer <= 0 && world.boulderVelocity > PHYSICS.rollbackBounceVelocityThreshold) {
       triggerBoulderExclamation()
     }
 
@@ -344,7 +343,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       if (world.boulderVelocity < 20) {
         displayScore.value = 0
         continueFromPeak.value = false
-        continueTimer.value = 5
+        continueTimer.value = TIMING.continueTimerDuration
         gameState.value = 'continue_prompt'
       }
     }
@@ -357,9 +356,9 @@ export function useGameLoop(deps: GameLoopDeps) {
     if (distFromPeak < PEAK_DISTANCE) {
       const eDist = Math.max(0, PEAK_DISTANCE - distFromPeak)
       const currentAngle = getAngleAtDistance(eDist)
-      world.boulderVelocity += Math.sin(currentAngle * Math.PI / 180) * 200 * dt
+      world.boulderVelocity += Math.sin(currentAngle * Math.PI / 180) * PHYSICS.rollingOverGravityScale * dt
     } else {
-      world.boulderVelocity *= 0.94
+      world.boulderVelocity *= PHYSICS.rollingOverDeceleration
       if (!world.sisyphusFallen) {
         world.sisyphusFallen = true
         world.sisyphusRunning = false
@@ -368,7 +367,7 @@ export function useGameLoop(deps: GameLoopDeps) {
     }
 
     world.boulderDistance += world.boulderVelocity * dt * pd
-    world.boulderBounce = Math.abs(Math.sin(world.boulderRotation * 3)) * Math.min(8, world.boulderVelocity * 0.008)
+    world.boulderBounce = Math.abs(Math.sin(world.boulderRotation * 3)) * Math.min(PHYSICS.maxBounceAmplitude, world.boulderVelocity * PHYSICS.bounceVelocityScale)
 
     const totalRollDistance = PEAK_DISTANCE + 500
     const scoreRatio = Math.max(0, 1 - (distFromPeak / totalRollDistance))
@@ -377,20 +376,17 @@ export function useGameLoop(deps: GameLoopDeps) {
     const effectiveDistance = Math.max(0, PEAK_DISTANCE - distFromPeak)
     displayLevel.value = getLevelAtDistance(effectiveDistance)
     progressPercent.value = Math.min(100, Math.max(0, (effectiveDistance / PEAK_DISTANCE) * 100))
+    updateScroll()
 
-    const canvas = gameCanvas.value
-    const screenWidth = canvas?.width || 800
-    world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
-
-    if (world.gameTime - world.lastRollSoundTime > 0.1 && world.boulderVelocity > 5) {
+    if (world.gameTime - world.lastRollSoundTime > TIMING.rollSoundIntervalFast && world.boulderVelocity > 5) {
       play8BitSound('roll')
       world.lastRollSoundTime = world.gameTime
     }
 
-    world.boulderRotation += world.boulderVelocity * dt * 0.02 * pd
+    world.boulderRotation += world.boulderVelocity * dt * PHYSICS.boulderRotationScale * pd
 
     if (world.sisyphusRunning) {
-      world.sisyphusTumbleX = -70 * pd
+      world.sisyphusTumbleX = -TUMBLE_OFFSET_X * pd
       const halfwayDown = PEAK_DISTANCE / 2
       if (distFromPeak > halfwayDown && Math.random() < 0.02) {
         world.sisyphusRunning = false
@@ -398,7 +394,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       }
     } else if (!world.sisyphusFallen) {
       world.sisyphusTumbleRotation += Math.PI * 4 * dt  // 2 rotations per second
-      world.sisyphusTumbleX = -70 * pd - Math.sin(world.sisyphusTumbleRotation) * 10 * pd
+      world.sisyphusTumbleX = -TUMBLE_OFFSET_X * pd - Math.sin(world.sisyphusTumbleRotation) * 10 * pd
     }
 
     world.boulderExclamationTimer -= dt
@@ -414,7 +410,7 @@ export function useGameLoop(deps: GameLoopDeps) {
     if (distFromPeak > PEAK_DISTANCE && world.boulderVelocity < 5) {
       displayScore.value = 0
       continueFromPeak.value = true
-      continueTimer.value = 5
+      continueTimer.value = TIMING.continueTimerDuration
       gameState.value = 'continue_prompt'
     }
   }
@@ -433,8 +429,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
   function updateCountdown(dt: number) {
     world.countdownTimer += dt
-    // 3 numbers (1s each) + "PUSH!" (0.5s) = 3.5s total
-    if (world.countdownTimer > 3.5) {
+    if (world.countdownTimer > TIMING.countdownTotal) {
       gameState.value = 'playing'
       world.lastTapTime = Date.now()
     }
@@ -443,7 +438,7 @@ export function useGameLoop(deps: GameLoopDeps) {
   function updateGettingUp(dt: number) {
     world.gettingUpPhase += dt
 
-    if (world.gettingUpPhase > 3) {
+    if (world.gettingUpPhase > TIMING.gettingUpTotalDuration) {
       // Flip direction if continuing from peak
       if (continueFromPeak.value) {
         world.pushDir = (world.pushDir * -1) as 1 | -1
@@ -454,12 +449,10 @@ export function useGameLoop(deps: GameLoopDeps) {
       world.boulderDistance = bottom
       world.worldDistance = bottom - 40 * world.pushDir
 
-      const canvas = gameCanvas.value
-      const screenWidth = canvas?.width || 800
-      world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
+      updateScroll()
 
       world.boulderVelocity = 0
-      intensity.value = 50
+      intensity.value = PHYSICS.initialIntensity
       world.lastTapTime = Date.now()
       score.value = 0
       displayScore.value = 0
@@ -474,15 +467,15 @@ export function useGameLoop(deps: GameLoopDeps) {
 
   function updateFinalThought(dt: number) {
     world.finalThoughtTimer += dt
-    if (world.finalThoughtTimer > 4) {
+    if (world.finalThoughtTimer > TIMING.finalThoughtDuration) {
       gameState.value = 'credits'
       creditsY.value = 500
     }
   }
 
   function updateCredits(dt: number) {
-    creditsY.value -= 40 * dt
-    if (creditsY.value < -1100) {
+    creditsY.value -= TIMING.creditsScrollSpeed * dt
+    if (creditsY.value < TIMING.creditsEndY) {
       showGameOver()
     }
   }
@@ -494,11 +487,11 @@ export function useGameLoop(deps: GameLoopDeps) {
     if (gameState.value === 'playing') {
       world.legPhase += dt * 8
       world.boulderRotation += dt * (CONSTANT_SPEED / 26) * world.pushDir
-      if (world.gameTime - world.lastFootstepTime > 0.25) {
+      if (world.gameTime - world.lastFootstepTime > TIMING.footstepInterval) {
         play8BitSound('footstep')
         world.lastFootstepTime = world.gameTime
       }
-      if (world.gameTime - world.lastHuffTime > 0.7) {
+      if (world.gameTime - world.lastHuffTime > TIMING.huffInterval) {
         play8BitSound('huff')
         world.lastHuffTime = world.gameTime
       }
@@ -536,7 +529,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     if (world.spaceshipActive) {
       world.spaceshipTimer += dt
-      world.spaceshipX += 120 * dt
+      world.spaceshipX += PHYSICS.spaceshipSpeed * dt
       world.spaceshipY += Math.sin(world.spaceshipTimer * 2) * 15 * dt
       if (world.spaceshipX > (gameCanvas.value?.width || 1000) + 100) {
         world.spaceshipActive = false
@@ -559,7 +552,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     // Auto-play
     if (world.autoPlayMode && gameState.value === 'playing') {
-      if (now - world.lastAutoTapTime > 120) {
+      if (now - world.lastAutoTapTime > TIMING.autoTapInterval) {
         registerTap()
         world.lastAutoTapTime = now
       }

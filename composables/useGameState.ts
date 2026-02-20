@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import { PEAK_DISTANCE, LEVEL_DISTANCES, PLAYER_SCREEN_X_RATIO, prometheusConfigDistance, prometheusProximity } from './usePhysics'
+import { TIMING, PHYSICS, ENVIRONMENT, COLORS } from '~/game/constants'
 import dialogue from '~/game.dialogue.json'
 import obstacleConfig from '~/game.obstacles.json'
 import { boulderExclamations, sisyphusExclamations, sassyComments, finalThoughts } from '~/game/content'
@@ -129,7 +130,7 @@ export function useGameState() {
   const score = ref(0)
   const displayScore = ref(0)
   const finalScore = ref(0)
-  const intensity = ref(50)
+  const intensity = ref(PHYSICS.initialIntensity)
   const leaderboard = ref<{ initials: string; score: number }[]>([])
   const continueTimer = ref(5)
   const continueFromPeak = ref(false)
@@ -144,9 +145,9 @@ export function useGameState() {
   const canSubmit = computed(() => initials.value.every(i => i.length === 1))
 
   const intensityColor = computed(() => {
-    if (intensity.value > 60) return '#4ade80'
-    if (intensity.value > 30) return '#fbbf24'
-    return '#ef4444'
+    if (intensity.value > 60) return COLORS.intensityGreen
+    if (intensity.value > 30) return COLORS.intensityYellow
+    return COLORS.intensityRed
   })
 
   const progressPercent = ref(0)
@@ -250,7 +251,7 @@ export function useGameState() {
   function resetGameState(getLevelAtDistance: (dist: number) => number) {
     score.value = 0
     displayScore.value = 0
-    intensity.value = 50
+    intensity.value = PHYSICS.initialIntensity
 
     const startDist = (typeof window !== 'undefined' && (window as any).__sisyphusStartDistance) || 0
     world.boulderDistance = startDist
@@ -311,7 +312,7 @@ export function useGameState() {
     world.countdownTimer = 0
 
     world.clouds = []
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < ENVIRONMENT.cloudCount; i++) {
       world.clouds.push({
         x: Math.random() * 2000,
         y: 40 + Math.random() * 100,
@@ -321,7 +322,7 @@ export function useGameState() {
     }
 
     world.trees = []
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < ENVIRONMENT.treeCount; i++) {
       const worldX = Math.random() * PEAK_DISTANCE * 2
       world.trees.push({
         worldX,
@@ -331,7 +332,7 @@ export function useGameState() {
     }
 
     world.grass = []
-    for (let i = 0; i < 500; i++) {
+    for (let i = 0; i < ENVIRONMENT.grassCount; i++) {
       world.grass.push({
         worldX: Math.random() * PEAK_DISTANCE * 2,
         height: 5 + Math.random() * 10,

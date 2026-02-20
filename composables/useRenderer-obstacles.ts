@@ -1,5 +1,10 @@
 import type { Ref } from 'vue'
 import type { Obstacle } from './useGameState'
+import { philosopherThoughts } from '~/game/content'
+import {
+  COLORS, FONTS, DEFAULT_CULL_MARGIN, STRAY_DOG_CULL_MARGIN,
+} from '~/game/constants'
+
 interface ObstacleRendererDeps {
   ctx: () => CanvasRenderingContext2D | null
   gameCanvas: Ref<HTMLCanvasElement | null>
@@ -33,7 +38,7 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     ctx.closePath()
     ctx.fill()
     ctx.fillStyle = '#fff'
-    ctx.font = '8px monospace'
+    ctx.font = FONTS.xs
     ctx.fillText('SOUVLAKI', screenX - 22, groundY - 30)
     ctx.fillText('(closed)', screenX - 18, groundY - 20)
   }
@@ -43,7 +48,7 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     ctx.fillRect(screenX - 2, groundY - 40, 4, 40)
     ctx.fillRect(screenX - 25, groundY - 50, 50, 20)
     ctx.fillStyle = '#fff'
-    ctx.font = '7px monospace'
+    ctx.font = FONTS.tiny
     const signs = ['KEEP GOING', 'ALMOST THERE', 'NO REFUNDS', 'WHY?']
     ctx.fillText(signs[Math.floor(worldX / 5000) % signs.length], screenX - 20, groundY - 38)
   }
@@ -144,7 +149,7 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     // Bark indicator
     if (!fled && s.dogBarkTimer !== undefined && s.dogBarkTimer < 0.5) {
       ctx.fillStyle = '#fff'
-      ctx.font = '10px monospace'
+      ctx.font = FONTS.base
       ctx.fillText('WOOF!', x + 5, groundY - 38)
     }
 
@@ -379,20 +384,19 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     ctx.fill()
 
     // Thought bubble with rotating quotes
-    const thoughts = ['The unexamined life\nis not worth living', 'I know that\nI know nothing', 'One must imagine\nSisyphus happy', 'Man is the measure\nof all things']
-    const idx = (s.thoughtIndex || 0) % thoughts.length
+    const idx = (s.thoughtIndex || 0) % philosopherThoughts.length
     const fadePhase = (s.thoughtTimer || 0) % 5
     let alpha = 1
     if (fadePhase < 0.5) alpha = fadePhase * 2
     else if (fadePhase > 4.5) alpha = (5 - fadePhase) * 2
 
-    drawBubble(headX, headY, thoughts[idx], 'thought', {
-      alpha: alpha * 0.8, font: '9px monospace', maxWidth: 120, offsetX: 15, offsetY: -30
+    drawBubble(headX, headY, philosopherThoughts[idx], 'thought', {
+      alpha: alpha * 0.8, font: FONTS.sm, maxWidth: 120, offsetX: 15, offsetY: -30
     })
 
     // Label
     ctx.fillStyle = '#666'
-    ctx.font = '9px monospace'
+    ctx.font = FONTS.sm
     ctx.fillText('Socrates', screenX - 18, groundY + 12)
   }
   function drawMountainGoat(screenX: number, groundY: number, obstacle: Obstacle) {
@@ -499,7 +503,7 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
 
     // Exclamation mark
     ctx.fillStyle = '#ffcc00'
-    ctx.font = 'bold 14px monospace'
+    ctx.font = FONTS.exclamationBold
     ctx.fillText('!', screenX - 3, groundY - 36)
 
     // Sign post
@@ -522,7 +526,7 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
 
     // Text label
     ctx.fillStyle = '#cc3300'
-    ctx.font = '7px monospace'
+    ctx.font = FONTS.tiny
     ctx.fillText('DANGER', screenX - 16, groundY - 58)
   }
   function drawTheMuses(screenX: number, groundY: number, obstacle: Obstacle) {
@@ -598,14 +602,14 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     const haAlpha = (Math.sin(laugh * 0.5) + 1) * 0.3 + 0.2
     ctx.fillStyle = '#fff'
     ctx.globalAlpha = haAlpha
-    ctx.font = '9px monospace'
+    ctx.font = FONTS.sm
     const haY = groundY - 50 + Math.sin(laugh * 0.8) * 5
     ctx.fillText('HA HA HA!', screenX - 22, haY)
     ctx.globalAlpha = 1
 
     // Label
     ctx.fillStyle = '#666'
-    ctx.font = '9px monospace'
+    ctx.font = FONTS.sm
     ctx.fillText('The Muses', screenX - 22, groundY + 16)
   }
   function drawLandmarks(width: number, height: number) {
@@ -614,7 +618,7 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     world.obstacles.forEach(obstacle => {
       const screenX = obstacle.worldX - world.worldScrollX
       // Wider culling for stray_dog since it runs far from its origin
-      const cullMargin = obstacle.type === 'stray_dog' ? 600 : 150
+      const cullMargin = obstacle.type === 'stray_dog' ? STRAY_DOG_CULL_MARGIN : DEFAULT_CULL_MARGIN
       if (screenX < -cullMargin || screenX > width + cullMargin) return
 
       const groundY = hillY(screenX, height)
@@ -689,7 +693,7 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
           // Angry squawks
           if ((s.triggerTimer || 0) < 2) {
             ctx.fillStyle = '#fff'
-            ctx.font = '9px monospace'
+            ctx.font = FONTS.sm
             ctx.globalAlpha = Math.max(0, 1 - (s.triggerTimer || 0) * 0.5)
             ctx.fillText('SQUAWK!', screenX - 15, groundY - 90)
             ctx.globalAlpha = 1

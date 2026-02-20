@@ -118,8 +118,7 @@ const loop = useGameLoop({
   showGameOver,
 })
 
-function startGame() {
-  initAudio()
+function launchGame() {
   resetGameState(getLevelAtDistance)
   for (let i = 0; i < 4; i++) {
     loop.spawnBird()
@@ -129,16 +128,15 @@ function startGame() {
   loop.gameLoop()
 }
 
+function startGame() {
+  initAudio()
+  launchGame()
+}
+
 function restartGame() {
   initialsSubmitted.value = false
   initials.value = ['', '', '']
-  resetGameState(getLevelAtDistance)
-  for (let i = 0; i < 4; i++) {
-    loop.spawnBird()
-  }
-  world.lastFrameTime = performance.now()
-  loop.startCountdown()
-  loop.gameLoop()
+  launchGame()
 }
 
 async function submitScore() {

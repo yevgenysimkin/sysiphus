@@ -1,6 +1,11 @@
 import type { Ref } from 'vue'
 import type { GameState } from './useGameState'
 import { PEAK_DISTANCE } from './usePhysics'
+import {
+  BOULDER_RADIUS, BOULDER_GROUND_OFFSET, HEAD_RADIUS, BODY_LENGTH,
+  UPPER_ARM, FOREARM, HIP_HEIGHT, SHOULDER_HEAD_GAP, RENDER_GAP_BASE,
+  TUMBLE_OFFSET_X, COLORS, FONTS, TIMING,
+} from '~/game/constants'
 
 interface CharacterRendererDeps {
   ctx: () => CanvasRenderingContext2D | null
@@ -53,6 +58,40 @@ interface CharacterRendererDeps {
 export function createCharacterRenderer(deps: CharacterRendererDeps) {
   const { ctx: getCtx, gameCanvas, gameState, continueFromPeak, world, hillY, drawBubble, getAngleAtDistance } = deps
 
+  /** Draw Sisyphus flattened on the ground (used after crushing, rolling_over fall, and rollback) */
+  function drawFlattenedBody(ctx: CanvasRenderingContext2D, screenX: number, groundY: number, dir: 1 | -1) {
+    ctx.save()
+    ctx.translate(screenX, 0)
+    ctx.scale(dir, 1)
+    ctx.translate(-screenX, 0)
+    ctx.strokeStyle = COLORS.stickFigure
+    ctx.lineWidth = 2
+    // Torso
+    ctx.beginPath()
+    ctx.moveTo(screenX - 15, groundY - 3)
+    ctx.lineTo(screenX + 18, groundY - 4)
+    ctx.stroke()
+    // Head
+    ctx.beginPath()
+    ctx.arc(screenX - 20, groundY - 5, 5, 0, Math.PI * 2)
+    ctx.stroke()
+    // Arms
+    ctx.beginPath()
+    ctx.moveTo(screenX - 5, groundY - 4)
+    ctx.lineTo(screenX - 12, groundY - 14)
+    ctx.moveTo(screenX + 8, groundY - 4)
+    ctx.lineTo(screenX + 5, groundY - 16)
+    ctx.stroke()
+    // Legs
+    ctx.beginPath()
+    ctx.moveTo(screenX + 18, groundY - 4)
+    ctx.lineTo(screenX + 28, groundY - 2)
+    ctx.moveTo(screenX + 18, groundY - 4)
+    ctx.lineTo(screenX + 25, groundY + 5)
+    ctx.stroke()
+    ctx.restore()
+  }
+
   function drawExclamations(width: number, height: number) {
     if (!getCtx()) return
 
@@ -63,7 +102,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
         (gameState.value === 'rolling_back' || gameState.value === 'rolling_over' || gameState.value === 'crushing')) {
       const alpha = Math.min(1, world.boulderExclamationTimer)
       drawBubble(boulderScreenX, boulderY, world.currentBoulderExclamation, 'speech', {
-        alpha, font: 'bold 14px monospace', offsetX: -10, offsetY: -50
+        alpha, font: FONTS.exclamationBold, offsetX: -10, offsetY: -50
       })
     }
 
@@ -72,7 +111,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
       const sisY = hillY(sisScreenX, height) - 30
       const alpha = Math.min(1, world.sisyphusExclamationTimer)
       drawBubble(sisScreenX, sisY, world.currentSisyphusExclamation, 'speech', {
-        alpha, font: '12px monospace', offsetX: -10, offsetY: -40
+        alpha, font: FONTS.lg, offsetX: -10, offsetY: -40
       })
     }
   }
@@ -98,7 +137,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     const boulderY = hillY(boulderScreenX, height) - 29
 
     drawBubble(boulderScreenX, boulderY, world.currentFinalThought + '\n- The Boulder', 'thought', {
-      alpha, font: '14px monospace', maxWidth: 220, offsetX: -60, offsetY: -60
+      alpha, font: FONTS.xl, maxWidth: 220, offsetX: -60, offsetY: -60
     })
   }
 
@@ -127,7 +166,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     ctx.translate(width / 2, height / 2 - 30)
     ctx.scale(scale, scale)
 
-    ctx.font = isNumber ? 'bold 120px monospace' : 'bold 72px monospace'
+    ctx.font = isNumber ? FONTS.countdownNumber : FONTS.countdownPush
     ctx.fillStyle = '#fff'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -142,7 +181,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     if (t < 3) {
       ctx.save()
       ctx.globalAlpha = 0.6
-      ctx.font = '16px monospace'
+      ctx.font = FONTS.ui
       ctx.fillStyle = '#fff'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
@@ -155,7 +194,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     const ctx = getCtx()
     if (!ctx) return
 
-    const boulderRadius = 26
+    const boulderRadius = BOULDER_RADIUS
 
     let boulderScreenX: number
     let feetScreenX: number
@@ -178,7 +217,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
       feetScreenX = world.worldDistance - world.worldScrollX
     }
 
-    const boulderBaseY = hillY(boulderScreenX, height) - boulderRadius - 3
+    const boulderBaseY = hillY(boulderScreenX, height) - boulderRadius - BOULDER_GROUND_OFFSET
     const slopeY1 = hillY(boulderScreenX - 5, height)
     const slopeY2 = hillY(boulderScreenX + 5, height)
     const slopeAngle = Math.atan2(slopeY1 - slopeY2, 10)
@@ -213,33 +252,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     if (gameState.value === 'rolling_back') {
       const crushScreenX = world.sisyphusCrushWorldX - world.worldScrollX
       if (crushScreenX > -50 && crushScreenX < (gameCanvas.value?.width || 800) + 50) {
-        const crushY = hillY(crushScreenX, height)
-        ctx.save()
-        ctx.translate(crushScreenX, 0)
-        ctx.scale(world.pushDir, 1)
-        ctx.translate(-crushScreenX, 0)
-        ctx.strokeStyle = '#fff'
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.moveTo(crushScreenX - 15, crushY - 3)
-        ctx.lineTo(crushScreenX + 18, crushY - 4)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.arc(crushScreenX - 20, crushY - 5, 5, 0, Math.PI * 2)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(crushScreenX - 5, crushY - 4)
-        ctx.lineTo(crushScreenX - 12, crushY - 14)
-        ctx.moveTo(crushScreenX + 8, crushY - 4)
-        ctx.lineTo(crushScreenX + 5, crushY - 16)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(crushScreenX + 18, crushY - 4)
-        ctx.lineTo(crushScreenX + 28, crushY - 2)
-        ctx.moveTo(crushScreenX + 18, crushY - 4)
-        ctx.lineTo(crushScreenX + 25, crushY + 5)
-        ctx.stroke()
-        ctx.restore()
+        drawFlattenedBody(ctx, crushScreenX, hillY(crushScreenX, height), world.pushDir)
       }
       return
     }
@@ -249,37 +262,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     // Flattened (crushed)
     if (world.sisyphusFlattened && gameState.value === 'crushing') {
       const crushScreenX = world.sisyphusCrushWorldX - world.worldScrollX
-      const crushY = hillY(crushScreenX, height)
-      ctx.save()
-      ctx.translate(crushScreenX, 0)
-      ctx.scale(world.pushDir, 1)
-      ctx.translate(-crushScreenX, 0)
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 2
-
-      ctx.beginPath()
-      ctx.moveTo(crushScreenX - 15, crushY - 3)
-      ctx.lineTo(crushScreenX + 18, crushY - 4)
-      ctx.stroke()
-
-      ctx.beginPath()
-      ctx.arc(crushScreenX - 20, crushY - 5, 5, 0, Math.PI * 2)
-      ctx.stroke()
-
-      ctx.beginPath()
-      ctx.moveTo(crushScreenX - 5, crushY - 4)
-      ctx.lineTo(crushScreenX - 12, crushY - 14)
-      ctx.moveTo(crushScreenX + 8, crushY - 4)
-      ctx.lineTo(crushScreenX + 5, crushY - 16)
-      ctx.stroke()
-
-      ctx.beginPath()
-      ctx.moveTo(crushScreenX + 18, crushY - 4)
-      ctx.lineTo(crushScreenX + 28, crushY - 2)
-      ctx.moveTo(crushScreenX + 18, crushY - 4)
-      ctx.lineTo(crushScreenX + 25, crushY + 5)
-      ctx.stroke()
-      ctx.restore()
+      drawFlattenedBody(ctx, crushScreenX, hillY(crushScreenX, height), world.pushDir)
       return
     }
 
@@ -361,7 +344,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
 
         if (world.currentSassyComment) {
           drawBubble(feetScreenX, shoulderY, world.currentSassyComment, 'speech', {
-            font: '12px monospace', offsetX: -20, offsetY: -50
+            font: FONTS.lg, offsetX: -20, offsetY: -50
           })
         }
       } else {
@@ -408,32 +391,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
       const pd = world.pushDir
 
       if (world.sisyphusFallen) {
-        ctx.save()
-        ctx.translate(feetScreenX, 0)
-        ctx.scale(pd, 1)
-        ctx.translate(-feetScreenX, 0)
-        ctx.strokeStyle = '#fff'
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.moveTo(feetScreenX - 15, groundY - 5)
-        ctx.lineTo(feetScreenX + 20, groundY - 3)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.arc(feetScreenX + 25, groundY - 5, 6, 0, Math.PI * 2)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(feetScreenX, groundY - 5)
-        ctx.lineTo(feetScreenX - 10, groundY - 15)
-        ctx.moveTo(feetScreenX + 10, groundY - 4)
-        ctx.lineTo(feetScreenX + 15, groundY - 18)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(feetScreenX - 15, groundY - 5)
-        ctx.lineTo(feetScreenX - 25, groundY - 2)
-        ctx.moveTo(feetScreenX - 15, groundY - 5)
-        ctx.lineTo(feetScreenX - 20, groundY + 5)
-        ctx.stroke()
-        ctx.restore()
+        drawFlattenedBody(ctx, feetScreenX, groundY, pd)
         return
       }
 
@@ -522,7 +480,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
 
     // Adjust feet position for consistent hip-to-boulder distance on steep slopes
     // At steeper angles, reduce horizontal gap so character stays close to boulder
-    const renderGap = 40 * Math.max(0.25, Math.pow(Math.cos(slopeAngle), 1.5))
+    const renderGap = RENDER_GAP_BASE * Math.max(0.25, Math.pow(Math.cos(slopeAngle), 1.5))
     feetScreenX = boulderScreenX - renderGap * world.pushDir
     const renderFeetY = hillY(feetScreenX, height)
 
@@ -538,7 +496,7 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     const leanAngle = 20 - currentAngle * 0.17
     const leanRad = leanAngle * Math.PI / 180
 
-    const bodyLength = 28
+    const bodyLength = BODY_LENGTH
     const breathing = Math.sin(world.breathPhase) * 1
 
     ctx.strokeStyle = '#ffffff'
@@ -550,23 +508,21 @@ export function createCharacterRenderer(deps: CharacterRendererDeps) {
     const footY = renderFeetY
 
     const hipX = feetScreenX
-    const hipY = renderFeetY - 18
+    const hipY = renderFeetY - HIP_HEIGHT
 
     const shoulderX = hipX + Math.sin(leanRad) * bodyLength
     const shoulderY = hipY - Math.cos(leanRad) * bodyLength + breathing
 
-    const headRadius = 6
+    const headRadius = HEAD_RADIUS
     const headBob = Math.sin(world.legPhase * 0.5) * 1.5
     const headX = shoulderX + 2 + headBob
-    const headY = shoulderY - headRadius - 4 + breathing
+    const headY = shoulderY - headRadius - SHOULDER_HEAD_GAP + breathing
 
     // Boulder center in local (mirrored) coordinate space
     const localBoulderCenterX = feetScreenX + (boulderX - feetScreenX) * world.pushDir
     const localBoulderCenterY = boulderY
 
     // Fixed-length arms aimed toward boulder center
-    const UPPER_ARM = 14
-    const FOREARM = 14
     const toBoulderDx = localBoulderCenterX - shoulderX
     const toBoulderDy = localBoulderCenterY - shoulderY
     const toBoulderDist = Math.sqrt(toBoulderDx * toBoulderDx + toBoulderDy * toBoulderDy) || 1

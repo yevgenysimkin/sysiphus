@@ -4,6 +4,7 @@ import type { Bird, Cloud, Tree, GrassTuft, Obstacle, SmokeParticle, AttackBird,
 import { PEAK_DISTANCE, LEVEL_DISTANCES, LEVEL_ANGLES, GROUND_SCREEN_Y_OFFSET } from './usePhysics'
 import { createObstacleRenderer } from './useRenderer-obstacles'
 import { createCharacterRenderer } from './useRenderer-character'
+import { COLORS, FONTS, ENVIRONMENT } from '~/game/constants'
 
 interface BubbleOptions {
   alpha?: number
@@ -102,7 +103,7 @@ export function useRenderer(deps: RendererDeps) {
     if (!canvas) return
 
     const alpha = options?.alpha ?? 1
-    const font = options?.font ?? '11px monospace'
+    const font = options?.font ?? FONTS.md
     const maxWidth = options?.maxWidth ?? 180
     const offsetX = options?.offsetX ?? 20
     const offsetY = options?.offsetY ?? -20
@@ -506,7 +507,7 @@ export function useRenderer(deps: RendererDeps) {
           ctx.stroke()
 
           ctx.fillStyle = '#666'
-          ctx.font = '10px monospace'
+          ctx.font = FONTS.base
           ctx.fillText(`L${level}`, screenX - 8, y - 25)
         }
       }
@@ -522,7 +523,7 @@ export function useRenderer(deps: RendererDeps) {
       ctx.fill()
 
       ctx.fillStyle = '#ffd700'
-      ctx.font = '12px monospace'
+      ctx.font = FONTS.lg
       ctx.fillText('PEAK', peakScreenX - 18, hillY(peakScreenX, height) - 15)
     }
   }
@@ -649,7 +650,7 @@ export function useRenderer(deps: RendererDeps) {
     const ouchPhase = Math.floor(world.gameTime * 2) % 4
     const ouchTexts = ['ouch...', 'ow...', 'ouch...', 'ugh...']
     ctx.fillStyle = '#fff'
-    ctx.font = '11px monospace'
+    ctx.font = FONTS.md
     const ouchAlpha = 0.5 + Math.sin(world.gameTime * 4) * 0.3
     ctx.globalAlpha = ouchAlpha
     ctx.fillText(ouchTexts[ouchPhase], embedX - 45, embedY - 25 * scale)
@@ -661,20 +662,20 @@ export function useRenderer(deps: RendererDeps) {
       const alpha = ex.timer < 0.5 ? ex.timer * 2 : ex.fadeIn
       if (ex.speaker === 'prometheus') {
         drawBubble(embedX, embedY - 15 * scale, ex.text, 'speech', {
-          alpha, font: '10px monospace', maxWidth: 150, offsetX: -60, offsetY: -40
+          alpha, font: FONTS.base, maxWidth: 150, offsetX: -60, offsetY: -40
         })
       } else {
         // Sisyphus speech — draw near the player position
         const playerScreenX = world.worldDistance - world.worldScrollX
         const playerY = hillY(playerScreenX, height) - 50
         drawBubble(playerScreenX, playerY, ex.text, 'speech', {
-          alpha, font: '10px monospace', maxWidth: 150, offsetX: 20, offsetY: -30
+          alpha, font: FONTS.base, maxWidth: 150, offsetX: 20, offsetY: -30
         })
       }
     }
 
     ctx.fillStyle = '#666'
-    ctx.font = '10px monospace'
+    ctx.font = FONTS.base
     ctx.fillText('Prometheus', screenX + 10, groundY + 70)
   }
 

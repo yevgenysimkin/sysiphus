@@ -1,4 +1,5 @@
 import type { Obstacle } from './useGameState'
+import { TIMING, PHYSICS, SOUND_AUDIBLE_RANGE } from '~/game/constants'
 
 interface ObstacleUpdateDeps {
   world: {
@@ -27,18 +28,18 @@ export function createObstacleUpdater(deps: ObstacleUpdateDeps) {
             if (s.dogBarkTimer !== undefined) {
               s.dogBarkTimer -= dt
               if (s.dogBarkTimer <= 0) {
-                s.dogBarkTimer = 3 + Math.random() * 4
-                if (dist < 600) play8BitSound('bark')
+                s.dogBarkTimer = TIMING.barkIntervalBase + Math.random() * TIMING.barkIntervalRandom
+                if (dist < SOUND_AUDIBLE_RANGE) play8BitSound('bark')
               }
             }
             // Flee when player approaches
             if (dist < (obs.triggerProximity || 200)) {
               s.dogFled = true
-              if (dist < 600) play8BitSound('bark')
+              if (dist < SOUND_AUDIBLE_RANGE) play8BitSound('bark')
             }
           } else {
             // Run downhill (opposite of push direction) past the player
-            s.dogX = (s.dogX || 0) - world.pushDir * 200 * dt
+            s.dogX = (s.dogX || 0) - world.pushDir * PHYSICS.dogRunSpeed * dt
           }
           break
         }
@@ -89,7 +90,7 @@ export function createObstacleUpdater(deps: ObstacleUpdateDeps) {
                 bird.phase += dt * 12
               }
             }
-            if ((s.triggerTimer || 0) > 3) s.triggerComplete = true
+            if ((s.triggerTimer || 0) > TIMING.attackBirdsDuration) s.triggerComplete = true
           } else if (!s.triggered && dist < (obs.triggerProximity || 200)) {
             s.triggered = true
             s.triggerTimer = 0
@@ -126,13 +127,13 @@ export function createObstacleUpdater(deps: ObstacleUpdateDeps) {
               if (s.lightningTimer <= 0) {
                 s.lightningFlash = 0.3
                 s.lightningTimer = 1 + Math.random() * 2
-                if (dist < 600) play8BitSound('thunder')
+                if (dist < SOUND_AUDIBLE_RANGE) play8BitSound('thunder')
               }
               if (s.lightningFlash && s.lightningFlash > 0) {
                 s.lightningFlash -= dt * 2
               }
             }
-            if ((s.triggerTimer || 0) > 4) s.triggerComplete = true
+            if ((s.triggerTimer || 0) > TIMING.stormDuration) s.triggerComplete = true
           } else if (!s.triggered && dist < (obs.triggerProximity || 150)) {
             s.triggered = true
             s.triggerTimer = 0
@@ -146,13 +147,13 @@ export function createObstacleUpdater(deps: ObstacleUpdateDeps) {
             s.laserAngle = (s.laserAngle || 0) + dt * 1.5
             s.laserActive = (s.triggerTimer || 0) > 0.5 && (s.triggerTimer || 0) < 3
             s.ufoY = 80 + Math.sin(s.animTimer * 2) * 10
-            if ((s.triggerTimer || 0) > 3.5) s.triggerComplete = true
+            if ((s.triggerTimer || 0) > TIMING.alienLaserDuration) s.triggerComplete = true
           } else if (!s.triggered && dist < (obs.triggerProximity || 200)) {
             s.triggered = true
             s.triggerTimer = 0
             s.ufoX = 0
             s.laserAngle = 0
-            if (dist < 600) play8BitSound('laser')
+            if (dist < SOUND_AUDIBLE_RANGE) play8BitSound('laser')
           }
           break
         }
@@ -162,10 +163,10 @@ export function createObstacleUpdater(deps: ObstacleUpdateDeps) {
             if (s.blinkTimer <= 0) {
               if (s.blinking) {
                 s.blinking = false
-                s.blinkTimer = 3 + Math.random() * 5
+                s.blinkTimer = TIMING.blinkIntervalBase + Math.random() * TIMING.blinkIntervalRandom
               } else {
                 s.blinking = true
-                s.blinkTimer = 0.15
+                s.blinkTimer = TIMING.blinkDuration
               }
             }
           }
@@ -200,7 +201,7 @@ export function createObstacleUpdater(deps: ObstacleUpdateDeps) {
         case 'philosopher': {
           if (s.thoughtTimer !== undefined) {
             s.thoughtTimer += dt
-            if (s.thoughtTimer > 5) {
+            if (s.thoughtTimer > TIMING.philosopherThoughtCycle) {
               s.thoughtTimer = 0
               s.thoughtIndex = ((s.thoughtIndex || 0) + 1) % 4
             }
