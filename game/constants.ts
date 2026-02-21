@@ -220,9 +220,9 @@ export const TIMING = {
   attackBirdsDuration: 3,
 
   // Flat idle harassment
-  idleBirdDelay: 3,                           // seconds before Lou swoops in (TODO: restore to 10)
-  idleBoulderThoughtDelay: 5,                // seconds before boulder thought bubble (TODO: restore to 15)
-  idleGaryDelay: 10,                          // seconds before Gary arrives (TODO: restore to 30)
+  idleBirdDelay: 10,                          // seconds before Lou swoops in
+  idleBoulderThoughtDelay: 15,               // seconds before boulder thought bubble
+  idleGaryDelay: 30,                          // seconds before Gary arrives
   idleDialogueLineDuration: 4,               // seconds each dialogue line shows
   idleDialoguePause: 0.5,                    // gap between sequential lines
   garyExitThoughtDuration: 4,                // Gary's departing thought bubble duration
