@@ -29,6 +29,13 @@ export const sassyComments = [
   "My therapist is going to hear about this.",
 ]
 
+export const stormThoughts = [
+  "what I wouldn't give for an umbrella... or better yet a nice truck",
+  "Rain, rain, go away... come again... or better still don't.",
+  "it could be worse. it could be worse. it could be worse. grrrr",
+  "well, at least it's not... no - better not give it any ideas.",
+]
+
 export const philosopherThoughts = [
   "The unexamined life is not worth living",
   "I know that I know nothing",

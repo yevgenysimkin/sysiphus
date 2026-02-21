@@ -61,6 +61,7 @@ import { useAudio } from '~/composables/useAudio'
 import { useInput } from '~/composables/useInput'
 import { useRenderer } from '~/composables/useRenderer'
 import { useGameLoop } from '~/composables/useGameLoop'
+import { SPAWNING } from '~/game/constants'
 
 const gameCanvas = ref<HTMLCanvasElement | null>(null)
 
@@ -122,7 +123,7 @@ const loop = useGameLoop({
 
 function launchGame() {
   resetGameState(getLevelAtDistance)
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < SPAWNING.initialBirdSpawnCount; i++) {
     loop.spawnBird()
   }
   world.lastFrameTime = performance.now()
@@ -142,14 +143,14 @@ function restartGame() {
 }
 
 async function submitScore() {
-  if (!canSubmit.value) return
+  if (!canSubmit.value || initialsSubmitted.value) return
+  initialsSubmitted.value = true
   const initialsStr = initials.value.join('').toUpperCase()
   try {
     await $fetch('/api/leaderboard', {
       method: 'POST',
       body: { initials: initialsStr, score: Math.floor(finalScore.value) }
     })
-    initialsSubmitted.value = true
     await fetchLeaderboard()
   } catch (e) {
     console.error('Failed to submit score:', e)
@@ -193,7 +194,7 @@ onMounted(() => {
 
     if (world.autoPlayMode) {
       console.log('🤖 Auto-play mode enabled')
-      setTimeout(() => startGame(), 1000)
+      setTimeout(() => startGame(), SPAWNING.autoPlayStartDelay)
     }
   }
 

@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { PEAK_DISTANCE, LEVEL_DISTANCES, PLAYER_SCREEN_X_RATIO, prometheusConfigDistance, prometheusProximity } from './usePhysics'
-import { TIMING, PHYSICS, ENVIRONMENT, COLORS } from '~/game/constants'
+import { TIMING, PHYSICS, ENVIRONMENT, COLORS, SPAWNING, OBSTACLE_BEHAVIOR } from '~/game/constants'
 import dialogue from '~/game.dialogue.json'
 import obstacleConfig from '~/game.obstacles.json'
 import { boulderExclamations, sisyphusExclamations, sassyComments, finalThoughts } from '~/game/content'
@@ -46,11 +46,17 @@ export interface ObstacleState {
   raindrops?: Raindrop[]
   lightningTimer?: number
   lightningFlash?: number
+  stormPhase?: 'arriving' | 'active' | 'departing'
+  stormCloudX?: number       // horizontal offset from obstacle screenX (arrives from offscreen)
+  stormCloudY?: number       // vertical position above ground
+  stormThoughtIndex?: number
+  stormThoughtTimer?: number
   // Alien Laser
   ufoX?: number
   ufoY?: number
   laserAngle?: number
   laserActive?: boolean
+  ufoPhase?: 'arriving' | 'active' | 'departing'
   // Mountain Goat
   blinkTimer?: number
   blinking?: boolean
@@ -84,19 +90,19 @@ function initObstacleState(type: ObstacleType): ObstacleState {
   const base: ObstacleState = { animTimer: 0 }
   switch (type) {
     case 'stray_dog':
-      return { ...base, dogFled: false, dogX: 0, dogBarkTimer: 2 + Math.random() * 3 }
+      return { ...base, dogFled: false, dogX: 0, dogBarkTimer: SPAWNING.strayDogBarkTimerMin + Math.random() * SPAWNING.strayDogBarkTimerRange }
     case 'campfire':
       return { ...base, smokeParticles: [] }
     case 'sasquatch':
-      return { ...base, squatchPeekAmount: 0.8, squatchHiding: false }
+      return { ...base, squatchPeekAmount: SPAWNING.sasquatchInitialPeek, squatchHiding: false }
     case 'attack_birds':
       return { ...base, attackBirds: [], triggered: false, triggerComplete: false, triggerTimer: 0 }
     case 'storm_cloud':
-      return { ...base, raindrops: [], lightningTimer: 0, lightningFlash: 0, triggered: false, triggerComplete: false, triggerTimer: 0 }
+      return { ...base, raindrops: [], lightningTimer: 0, lightningFlash: 0, triggered: false, triggerComplete: false, triggerTimer: 0, stormPhase: 'arriving' as const, stormCloudX: 0, stormCloudY: 0, stormThoughtIndex: 0, stormThoughtTimer: 0 }
     case 'alien_laser':
-      return { ...base, ufoX: 0, ufoY: 80, laserAngle: 0, laserActive: false, triggered: false, triggerComplete: false, triggerTimer: 0 }
+      return { ...base, ufoX: 0, ufoY: OBSTACLE_BEHAVIOR.ufoDefaultY, laserAngle: 0, laserActive: false, triggered: false, triggerComplete: false, triggerTimer: 0, ufoPhase: 'arriving' as const }
     case 'mountain_goat':
-      return { ...base, blinkTimer: 3 + Math.random() * 4, blinking: false }
+      return { ...base, blinkTimer: SPAWNING.goatBlinkTimerMin + Math.random() * SPAWNING.goatBlinkTimerRange, blinking: false }
     case 'avalanche_warning':
       return { ...base, fallingRocks: [] }
     case 'the_muses':
@@ -137,7 +143,7 @@ export function useGameState() {
   const currentLevel = ref(1)
   const displayLevel = ref(1)
   const levelAnnouncement = ref('')
-  const creditsY = ref(600)
+  const creditsY = ref(SPAWNING.creditsInitialY)
   const initials = ref(['', '', ''])
   const initialInputs = ref<(HTMLInputElement | null)[]>([null, null, null])
   const initialsSubmitted = ref(false)
@@ -269,12 +275,12 @@ export function useGameState() {
 
   function triggerBoulderExclamation() {
     world.currentBoulderExclamation = boulderExclamations[Math.floor(Math.random() * boulderExclamations.length)]
-    world.boulderExclamationTimer = 2 + Math.random() * 2
+    world.boulderExclamationTimer = TIMING.boulderExclamationDuration + Math.random() * TIMING.boulderExclamationRandom
   }
 
   function triggerSisyphusExclamation() {
     world.currentSisyphusExclamation = sisyphusExclamations[Math.floor(Math.random() * sisyphusExclamations.length)]
-    world.sisyphusExclamationTimer = 3 + Math.random() * 2
+    world.sisyphusExclamationTimer = TIMING.sisyphusExclamationDuration + Math.random() * TIMING.sisyphusExclamationRandom
   }
 
   function resetGameState(getLevelAtDistance: (dist: number) => number) {
@@ -284,14 +290,14 @@ export function useGameState() {
 
     const startDist = (typeof window !== 'undefined' && (window as any).__sisyphusStartDistance) || 0
     world.boulderDistance = startDist
-    world.worldDistance = Math.max(0, startDist - 40)
-    const initialScreenWidth = (typeof window !== 'undefined' ? window.innerWidth : 800)
+    world.worldDistance = Math.max(0, startDist - SPAWNING.initialWorldDistanceOffset)
+    const initialScreenWidth = (typeof window !== 'undefined' ? window.innerWidth : PHYSICS.defaultCanvasWidth)
     world.worldScrollX = world.boulderDistance - (initialScreenWidth * PLAYER_SCREEN_X_RATIO)
 
     if (startDist > 0) {
       currentLevel.value = getLevelAtDistance(startDist)
       displayLevel.value = currentLevel.value
-      score.value = startDist * 5
+      score.value = startDist * SPAWNING.scorePerDistance
       displayScore.value = score.value
     }
 
@@ -299,7 +305,7 @@ export function useGameState() {
     if (rightSide && startDist === 0) {
       world.pushDir = -1
       world.boulderDistance = PEAK_DISTANCE * 2
-      world.worldDistance = world.boulderDistance + 40
+      world.worldDistance = world.boulderDistance + SPAWNING.initialWorldDistanceOffset
       world.worldScrollX = world.boulderDistance - (initialScreenWidth * PLAYER_SCREEN_X_RATIO)
     } else {
       world.pushDir = 1
@@ -357,10 +363,10 @@ export function useGameState() {
     world.clouds = []
     for (let i = 0; i < ENVIRONMENT.cloudCount; i++) {
       world.clouds.push({
-        x: Math.random() * 2000,
-        y: 40 + Math.random() * 100,
-        speed: 8 + Math.random() * 15,
-        size: 25 + Math.random() * 35
+        x: Math.random() * SPAWNING.cloudMaxXSpawn,
+        y: SPAWNING.cloudYMin + Math.random() * SPAWNING.cloudYRange,
+        speed: SPAWNING.cloudSpeedMin + Math.random() * SPAWNING.cloudSpeedRange,
+        size: SPAWNING.cloudSizeMin + Math.random() * SPAWNING.cloudSizeRange,
       })
     }
 
@@ -369,9 +375,9 @@ export function useGameState() {
       const worldX = Math.random() * PEAK_DISTANCE * 2
       world.trees.push({
         worldX,
-        size: 120 + Math.random() * 180,
-        type: Math.random() > 0.7 ? 'pine' : Math.random() > 0.5 ? 'oak' : 'dead',
-        layer: Math.random() < 0.3 ? 'fg' : 'bg',
+        size: SPAWNING.treeSizeMin + Math.random() * SPAWNING.treeSizeRange,
+        type: Math.random() > SPAWNING.treePineThreshold ? 'pine' : Math.random() > SPAWNING.treeOakThreshold ? 'oak' : 'dead',
+        layer: Math.random() < SPAWNING.treeForegroundThreshold ? 'fg' : 'bg',
       })
     }
 
@@ -379,8 +385,8 @@ export function useGameState() {
     for (let i = 0; i < ENVIRONMENT.grassCount; i++) {
       world.grass.push({
         worldX: Math.random() * PEAK_DISTANCE * 2,
-        height: 5 + Math.random() * 10,
-        blades: 3 + Math.floor(Math.random() * 4)
+        height: SPAWNING.grassHeightMin + Math.random() * SPAWNING.grassHeightRange,
+        blades: SPAWNING.grassBladesMin + Math.floor(Math.random() * SPAWNING.grassBladesRange)
       })
     }
 

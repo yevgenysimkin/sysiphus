@@ -1,4 +1,5 @@
 import gameConfig from '~/game.config.json'
+import { LEVEL_TRANSITION_ZONE } from '~/game/constants'
 
 // Flat start area before the hill begins
 export const FLAT_START = gameConfig.flatStartWidth
@@ -39,7 +40,7 @@ export function usePhysics() {
 
   function getAngleAtDistance(dist: number): number {
     if (dist < FLAT_START) {
-      const transitionZone = 30
+      const transitionZone = LEVEL_TRANSITION_ZONE
       const distToLevel1 = FLAT_START - dist
       if (distToLevel1 < transitionZone) {
         const t = 1 - (distToLevel1 / transitionZone)

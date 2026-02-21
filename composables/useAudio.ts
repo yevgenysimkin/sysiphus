@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { AUDIO } from '~/game/constants-audio'
 
 type SoundType = 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup' | 'bark' | 'thunder' | 'laser'
 
@@ -25,98 +26,118 @@ export function useAudio() {
     const now = audioCtx.currentTime
 
     switch (type) {
-      case 'footstep':
+      case 'footstep': {
+        const p = AUDIO.footstep
         osc.type = 'square'
-        osc.frequency.setValueAtTime(80 + Math.random() * 40, now)
-        osc.frequency.exponentialRampToValueAtTime(40, now + 0.05)
-        gain.gain.setValueAtTime(0.08, now)
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05)
+        osc.frequency.setValueAtTime(p.freqMin + Math.random() * p.freqRange, now)
+        osc.frequency.exponentialRampToValueAtTime(p.freqEnd, now + p.duration)
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
         osc.start(now)
-        osc.stop(now + 0.05)
+        osc.stop(now + p.duration)
         break
-      case 'huff':
+      }
+      case 'huff': {
+        const p = AUDIO.huff
         osc.type = 'sawtooth'
-        osc.frequency.setValueAtTime(150, now)
-        osc.frequency.exponentialRampToValueAtTime(80, now + 0.15)
-        gain.gain.setValueAtTime(0.04, now)
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15)
+        osc.frequency.setValueAtTime(p.freqStart, now)
+        osc.frequency.exponentialRampToValueAtTime(p.freqEnd, now + p.duration)
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
         osc.start(now)
-        osc.stop(now + 0.15)
+        osc.stop(now + p.duration)
         break
-      case 'push':
+      }
+      case 'push': {
+        const p = AUDIO.push
         osc.type = 'triangle'
-        osc.frequency.setValueAtTime(100, now)
-        osc.frequency.exponentialRampToValueAtTime(180, now + 0.03)
-        gain.gain.setValueAtTime(0.12, now)
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08)
+        osc.frequency.setValueAtTime(p.freqStart, now)
+        osc.frequency.exponentialRampToValueAtTime(p.freqEnd, now + p.rampDuration)
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
         osc.start(now)
-        osc.stop(now + 0.08)
+        osc.stop(now + p.duration)
         break
-      case 'slip':
+      }
+      case 'slip': {
+        const p = AUDIO.slip
         osc.type = 'sawtooth'
-        osc.frequency.setValueAtTime(200, now)
-        osc.frequency.exponentialRampToValueAtTime(50, now + 0.2)
-        gain.gain.setValueAtTime(0.08, now)
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2)
+        osc.frequency.setValueAtTime(p.freqStart, now)
+        osc.frequency.exponentialRampToValueAtTime(p.freqEnd, now + p.duration)
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
         osc.start(now)
-        osc.stop(now + 0.2)
+        osc.stop(now + p.duration)
         break
-      case 'crush':
+      }
+      case 'crush': {
+        const p = AUDIO.crush
         osc.type = 'square'
-        osc.frequency.setValueAtTime(100, now)
-        osc.frequency.exponentialRampToValueAtTime(30, now + 0.5)
-        gain.gain.setValueAtTime(0.25, now)
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5)
+        osc.frequency.setValueAtTime(p.freqStart, now)
+        osc.frequency.exponentialRampToValueAtTime(p.freqEnd, now + p.duration)
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
         osc.start(now)
-        osc.stop(now + 0.5)
+        osc.stop(now + p.duration)
         break
-      case 'roll':
+      }
+      case 'roll': {
+        const p = AUDIO.roll
         osc.type = 'triangle'
-        osc.frequency.setValueAtTime(50 + Math.random() * 30, now)
-        gain.gain.setValueAtTime(0.06, now)
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08)
+        osc.frequency.setValueAtTime(p.freqMin + Math.random() * p.freqRange, now)
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
         osc.start(now)
-        osc.stop(now + 0.08)
+        osc.stop(now + p.duration)
         break
-      case 'levelup':
+      }
+      case 'levelup': {
+        const p = AUDIO.levelup
         osc.type = 'square'
-        osc.frequency.setValueAtTime(440, now)
-        osc.frequency.setValueAtTime(554, now + 0.1)
-        osc.frequency.setValueAtTime(659, now + 0.2)
-        gain.gain.setValueAtTime(0.15, now)
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4)
+        for (let i = 0; i < p.notes.length; i++) {
+          osc.frequency.setValueAtTime(p.notes[i], now + p.noteTimes[i])
+        }
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
         osc.start(now)
-        osc.stop(now + 0.4)
+        osc.stop(now + p.duration)
         break
-      case 'bark':
+      }
+      case 'bark': {
+        const p = AUDIO.bark
         osc.type = 'square'
-        osc.frequency.setValueAtTime(300, now)
-        osc.frequency.setValueAtTime(450, now + 0.05)
-        osc.frequency.exponentialRampToValueAtTime(200, now + 0.12)
-        gain.gain.setValueAtTime(0.1, now)
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12)
+        osc.frequency.setValueAtTime(p.freqStart, now)
+        osc.frequency.setValueAtTime(p.freqPeak, now + p.peakTime)
+        osc.frequency.exponentialRampToValueAtTime(p.freqEnd, now + p.duration)
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
         osc.start(now)
-        osc.stop(now + 0.12)
+        osc.stop(now + p.duration)
         break
-      case 'thunder':
+      }
+      case 'thunder': {
+        const p = AUDIO.thunder
         osc.type = 'sawtooth'
-        osc.frequency.setValueAtTime(80, now)
-        osc.frequency.exponentialRampToValueAtTime(20, now + 0.6)
-        gain.gain.setValueAtTime(0.2, now)
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6)
+        osc.frequency.setValueAtTime(p.freqStart, now)
+        osc.frequency.exponentialRampToValueAtTime(p.freqEnd, now + p.duration)
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
         osc.start(now)
-        osc.stop(now + 0.6)
+        osc.stop(now + p.duration)
         break
-      case 'laser':
+      }
+      case 'laser': {
+        const p = AUDIO.laser
         osc.type = 'sawtooth'
-        osc.frequency.setValueAtTime(800, now)
-        osc.frequency.exponentialRampToValueAtTime(200, now + 0.3)
-        osc.frequency.exponentialRampToValueAtTime(600, now + 0.5)
-        gain.gain.setValueAtTime(0.1, now)
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5)
+        osc.frequency.setValueAtTime(p.freqStart, now)
+        osc.frequency.exponentialRampToValueAtTime(p.freqMid, now + p.rampDownTime)
+        osc.frequency.exponentialRampToValueAtTime(p.freqPeak, now + p.duration)
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
         osc.start(now)
-        osc.stop(now + 0.5)
+        osc.stop(now + p.duration)
         break
+      }
     }
   }
 

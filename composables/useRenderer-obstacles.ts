@@ -1,9 +1,16 @@
 import type { Ref } from 'vue'
 import type { Obstacle } from './useGameState'
-import { philosopherThoughts } from '~/game/content'
+import { drawAncientRuins as drawAncientRuinsStandalone } from './useRenderer-ruins'
+import { philosopherThoughts, stormThoughts } from '~/game/content'
 import {
   COLORS, FONTS, DEFAULT_CULL_MARGIN, STRAY_DOG_CULL_MARGIN,
+  TIMING, OBSTACLE_BEHAVIOR,
 } from '~/game/constants'
+import {
+  SOUVLAKI, SIGN_RENDER, BENCH, ROCK_RENDER, STRAY_DOG, CAMPFIRE,
+  SASQUATCH, PHILOSOPHER, MOUNTAIN_GOAT, AVALANCHE_RENDER, MUSES,
+  OVERLAY_CULL, ATTACK_BIRDS_RENDER, STORM, ALIEN,
+} from '~/game/constants-rendering'
 
 interface ObstacleRendererDeps {
   ctx: () => CanvasRenderingContext2D | null
@@ -27,48 +34,48 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
 
   function drawSouvlaki(screenX: number, groundY: number) {
     const ctx = getCtx()!
-    ctx.fillStyle = '#8b4513'
-    ctx.fillRect(screenX - 25, groundY - 50, 50, 50)
-    ctx.fillStyle = '#c41e3a'
+    ctx.fillStyle = COLORS.souvlakiBuilding
+    ctx.fillRect(screenX + SOUVLAKI.xOffset, groundY + SOUVLAKI.height, SOUVLAKI.width, -SOUVLAKI.height)
+    ctx.fillStyle = COLORS.souvlakiAwning
     ctx.beginPath()
-    ctx.moveTo(screenX - 35, groundY - 50)
-    ctx.lineTo(screenX + 35, groundY - 50)
-    ctx.lineTo(screenX + 30, groundY - 65)
-    ctx.lineTo(screenX - 30, groundY - 65)
+    ctx.moveTo(screenX + SOUVLAKI.awningXMin, groundY + SOUVLAKI.height)
+    ctx.lineTo(screenX + SOUVLAKI.awningXMax, groundY + SOUVLAKI.height)
+    ctx.lineTo(screenX + SOUVLAKI.awningPeakXMax, groundY + SOUVLAKI.awningPeakY)
+    ctx.lineTo(screenX + SOUVLAKI.awningPeakXMin, groundY + SOUVLAKI.awningPeakY)
     ctx.closePath()
     ctx.fill()
-    ctx.fillStyle = '#fff'
+    ctx.fillStyle = COLORS.stickFigure
     ctx.font = FONTS.xs
-    ctx.fillText('SOUVLAKI', screenX - 22, groundY - 30)
-    ctx.fillText('(closed)', screenX - 18, groundY - 20)
+    ctx.fillText('SOUVLAKI', screenX + SOUVLAKI.textX, groundY + SOUVLAKI.textY)
+    ctx.fillText('(closed)', screenX + SOUVLAKI.textX2, groundY + SOUVLAKI.textY2)
   }
   function drawSign(screenX: number, groundY: number, worldX: number) {
     const ctx = getCtx()!
-    ctx.fillStyle = '#5c4033'
-    ctx.fillRect(screenX - 2, groundY - 40, 4, 40)
-    ctx.fillRect(screenX - 25, groundY - 50, 50, 20)
-    ctx.fillStyle = '#fff'
+    ctx.fillStyle = COLORS.signPost
+    ctx.fillRect(screenX + SIGN_RENDER.postXOffset, groundY + SIGN_RENDER.postHeight, SIGN_RENDER.postWidth, -SIGN_RENDER.postHeight)
+    ctx.fillRect(screenX + SIGN_RENDER.boardXOffset, groundY + SIGN_RENDER.boardYOffset, SIGN_RENDER.boardWidth, -SIGN_RENDER.boardYOffset - SIGN_RENDER.postHeight)
+    ctx.fillStyle = COLORS.stickFigure
     ctx.font = FONTS.tiny
     const signs = ['KEEP GOING', 'ALMOST THERE', 'NO REFUNDS', 'WHY?']
-    ctx.fillText(signs[Math.floor(worldX / 5000) % signs.length], screenX - 20, groundY - 38)
+    ctx.fillText(signs[Math.floor(worldX / SIGN_RENDER.cycleDistance) % signs.length], screenX - 20, groundY - 38)
   }
   function drawBench(screenX: number, groundY: number) {
     const ctx = getCtx()!
-    ctx.fillStyle = '#654321'
-    ctx.fillRect(screenX - 20, groundY - 15, 40, 5)
-    ctx.fillRect(screenX - 18, groundY - 15, 3, 15)
-    ctx.fillRect(screenX + 15, groundY - 15, 3, 15)
-    ctx.fillRect(screenX - 20, groundY - 25, 40, 3)
+    ctx.fillStyle = COLORS.woodBrown
+    ctx.fillRect(screenX + BENCH.seatXOffset, groundY + BENCH.seatY, BENCH.seatWidth, BENCH.seatHeight)
+    ctx.fillRect(screenX + BENCH.legLX, groundY + BENCH.seatY, 3, BENCH.legHeight)
+    ctx.fillRect(screenX + BENCH.legRX, groundY + BENCH.seatY, 3, BENCH.legHeight)
+    ctx.fillRect(screenX + BENCH.seatXOffset, groundY + BENCH.backY, BENCH.seatWidth, BENCH.backHeight)
   }
   function drawRock(screenX: number, groundY: number) {
     const ctx = getCtx()!
-    ctx.fillStyle = '#5a5a5a'
+    ctx.fillStyle = COLORS.rockGray
     ctx.beginPath()
-    ctx.ellipse(screenX, groundY - 10, 20, 12, 0, 0, Math.PI * 2)
+    ctx.ellipse(screenX, groundY + ROCK_RENDER.yOffset, ROCK_RENDER.width, ROCK_RENDER.height, 0, 0, Math.PI * 2)
     ctx.fill()
-    ctx.fillStyle = '#4a4a4a'
+    ctx.fillStyle = COLORS.rockDark
     ctx.beginPath()
-    ctx.ellipse(screenX - 5, groundY - 12, 8, 6, 0.3, 0, Math.PI * 2)
+    ctx.ellipse(screenX + ROCK_RENDER.shadowXOffset, groundY + ROCK_RENDER.shadowYOffset, ROCK_RENDER.shadowW, ROCK_RENDER.shadowH, ROCK_RENDER.shadowRot, 0, Math.PI * 2)
     ctx.fill()
   }
   function drawStrayDog(screenX: number, origGroundY: number, obstacle: Obstacle) {
@@ -78,7 +85,7 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     const x = screenX + dogOffsetX
     const fled = s.dogFled
 
-    if (fled && Math.abs(dogOffsetX) > 600) return
+    if (fled && Math.abs(dogOffsetX) > STRAY_DOG.fledCullDist) return
 
     // Recompute ground Y at dog's actual screen position so it follows the hill contour
     const canvas = gameCanvas.value
@@ -93,65 +100,65 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
       ctx.translate(-x, 0)
     }
 
-    ctx.strokeStyle = '#ddd'
-    ctx.lineWidth = 2
+    ctx.strokeStyle = COLORS.dogStroke
+    ctx.lineWidth = STRAY_DOG.lineWidth
 
-    const legAnim = fled ? Math.sin(s.animTimer * 20) * 6 : Math.sin(s.animTimer * 3) * 2
-    const tailWag = Math.sin(s.animTimer * (fled ? 15 : 5)) * 0.4
+    const legAnim = fled
+      ? Math.sin(s.animTimer * STRAY_DOG.legAnimFreqFlee) * STRAY_DOG.legAnimAmpFlee
+      : Math.sin(s.animTimer * STRAY_DOG.legAnimFreqIdle) * STRAY_DOG.legAnimAmpIdle
+    const tailWag = Math.sin(s.animTimer * (fled ? STRAY_DOG.tailWagFreqFlee : STRAY_DOG.tailWagFreqIdle)) * STRAY_DOG.tailWagAmplitude
 
     // Body
     ctx.beginPath()
-    ctx.moveTo(x - 12, groundY - 18)
-    ctx.lineTo(x + 12, groundY - 18)
+    ctx.moveTo(x + STRAY_DOG.bodyXMin, groundY + STRAY_DOG.bodyY)
+    ctx.lineTo(x + STRAY_DOG.bodyXMax, groundY + STRAY_DOG.bodyY)
     ctx.stroke()
 
     // Head
     ctx.beginPath()
-    ctx.arc(x + 16, groundY - 22, 6, 0, Math.PI * 2)
+    ctx.arc(x + STRAY_DOG.headX, groundY + STRAY_DOG.headY, STRAY_DOG.headRadius, 0, Math.PI * 2)
     ctx.stroke()
 
     // Ears
     ctx.beginPath()
-    ctx.moveTo(x + 13, groundY - 27)
-    ctx.lineTo(x + 11, groundY - 33)
-    ctx.moveTo(x + 19, groundY - 27)
-    ctx.lineTo(x + 21, groundY - 33)
+    ctx.moveTo(x + STRAY_DOG.earLX, groundY + STRAY_DOG.earLY)
+    ctx.lineTo(x + STRAY_DOG.earLEndX, groundY + STRAY_DOG.earLEndY)
+    ctx.moveTo(x + STRAY_DOG.earRX, groundY + STRAY_DOG.earRY)
+    ctx.lineTo(x + STRAY_DOG.earREndX, groundY + STRAY_DOG.earREndY)
     ctx.stroke()
 
     // Snout
     ctx.beginPath()
-    ctx.moveTo(x + 22, groundY - 22)
-    ctx.lineTo(x + 26, groundY - 20)
+    ctx.moveTo(x + STRAY_DOG.snoutStartX, groundY + STRAY_DOG.snoutStartY)
+    ctx.lineTo(x + STRAY_DOG.snoutEndX, groundY + STRAY_DOG.snoutEndY)
     ctx.stroke()
 
     // Front legs
     ctx.beginPath()
-    ctx.moveTo(x + 8, groundY - 18)
-    ctx.lineTo(x + 8 + legAnim, groundY)
-    ctx.moveTo(x + 4, groundY - 18)
-    ctx.lineTo(x + 4 - legAnim, groundY)
+    ctx.moveTo(x + STRAY_DOG.frontLegLX, groundY + STRAY_DOG.legY)
+    ctx.lineTo(x + STRAY_DOG.frontLegLX + legAnim, groundY)
+    ctx.moveTo(x + STRAY_DOG.frontLegRX, groundY + STRAY_DOG.legY)
+    ctx.lineTo(x + STRAY_DOG.frontLegRX - legAnim, groundY)
     ctx.stroke()
 
     // Back legs
     ctx.beginPath()
-    ctx.moveTo(x - 8, groundY - 18)
-    ctx.lineTo(x - 8 + legAnim, groundY)
-    ctx.moveTo(x - 12, groundY - 18)
-    ctx.lineTo(x - 12 - legAnim, groundY)
+    ctx.moveTo(x + STRAY_DOG.backLegLX, groundY + STRAY_DOG.legY)
+    ctx.lineTo(x + STRAY_DOG.backLegLX + legAnim, groundY)
+    ctx.moveTo(x + STRAY_DOG.backLegRX, groundY + STRAY_DOG.legY)
+    ctx.lineTo(x + STRAY_DOG.backLegRX - legAnim, groundY)
     ctx.stroke()
 
     // Tail
     ctx.beginPath()
-    ctx.moveTo(x - 12, groundY - 18)
-    ctx.quadraticCurveTo(x - 18, groundY - 28 + Math.sin(tailWag) * 4, x - 22, groundY - 30 + Math.sin(tailWag) * 6)
+    ctx.moveTo(x + STRAY_DOG.tailStartX, groundY + STRAY_DOG.tailStartY)
+    ctx.quadraticCurveTo(
+      x + STRAY_DOG.tailCtrlX, groundY + STRAY_DOG.tailCtrlY + Math.sin(tailWag) * STRAY_DOG.tailWagScale1,
+      x + STRAY_DOG.tailEndX, groundY + STRAY_DOG.tailEndY + Math.sin(tailWag) * STRAY_DOG.tailWagScale2
+    )
     ctx.stroke()
 
-    // Bark indicator
-    if (!fled && s.dogBarkTimer !== undefined && s.dogBarkTimer < 0.5) {
-      ctx.fillStyle = '#fff'
-      ctx.font = FONTS.base
-      ctx.fillText('WOOF!', x + 5, groundY - 38)
-    }
+    // Bark indicator drawn in drawLandmarkBubbles for top Z-order
 
     ctx.restore()
   }
@@ -160,45 +167,44 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     const s = obstacle.state
 
     // Logs
-    ctx.strokeStyle = '#654321'
-    ctx.lineWidth = 4
+    ctx.strokeStyle = COLORS.woodBrown
+    ctx.lineWidth = CAMPFIRE.logLineWidth
     ctx.beginPath()
-    ctx.moveTo(screenX - 15, groundY)
-    ctx.lineTo(screenX + 5, groundY - 8)
-    ctx.moveTo(screenX + 15, groundY)
-    ctx.lineTo(screenX - 5, groundY - 8)
+    ctx.moveTo(screenX + CAMPFIRE.logLStartX, groundY)
+    ctx.lineTo(screenX + CAMPFIRE.logLEndX, groundY + CAMPFIRE.logLY)
+    ctx.moveTo(screenX + CAMPFIRE.logRStartX, groundY)
+    ctx.lineTo(screenX + CAMPFIRE.logREndX, groundY + CAMPFIRE.logRY)
     ctx.stroke()
 
     // Flames
     const t = s.animTimer
-    for (let i = 0; i < 5; i++) {
-      const flicker = Math.sin(t * 10 + i * 1.5) * 3
-      const h = 12 + Math.sin(t * 8 + i * 2) * 5
-      const fx = screenX - 6 + i * 3 + flicker
-      const colors = ['#ff4500', '#ff6b00', '#ffaa00', '#ffcc00', '#ff8800']
-      ctx.fillStyle = colors[i]
+    for (let i = 0; i < CAMPFIRE.flameCount; i++) {
+      const flicker = Math.sin(t * CAMPFIRE.flickerFreq + i * CAMPFIRE.flickerPhaseOffset) * CAMPFIRE.flickerAmp
+      const h = CAMPFIRE.flameHeightBase + Math.sin(t * CAMPFIRE.flameHeightFreq + i * CAMPFIRE.flameHeightPhaseOffset) * CAMPFIRE.flameHeightAmp
+      const fx = screenX + CAMPFIRE.flameXBase + i * CAMPFIRE.flameXStep + flicker
+      ctx.fillStyle = COLORS.campfireFlames[i]
       ctx.beginPath()
-      ctx.moveTo(fx - 3, groundY - 6)
-      ctx.quadraticCurveTo(fx + flicker, groundY - 6 - h, fx + 3, groundY - 6)
+      ctx.moveTo(fx - 3, groundY + CAMPFIRE.flameYBase)
+      ctx.quadraticCurveTo(fx + flicker, groundY + CAMPFIRE.flameYBase - h, fx + 3, groundY + CAMPFIRE.flameYBase)
       ctx.fill()
     }
 
     // Glow
-    const glow = ctx.createRadialGradient(screenX, groundY - 10, 5, screenX, groundY - 10, 40)
-    glow.addColorStop(0, 'rgba(255, 150, 50, 0.15)')
-    glow.addColorStop(1, 'rgba(255, 100, 0, 0)')
+    const glow = ctx.createRadialGradient(screenX, groundY + CAMPFIRE.glowY, CAMPFIRE.glowInnerRadius, screenX, groundY + CAMPFIRE.glowY, CAMPFIRE.glowOuterRadius)
+    glow.addColorStop(0, COLORS.campfireGlowInner)
+    glow.addColorStop(1, COLORS.campfireGlowOuter)
     ctx.fillStyle = glow
     ctx.beginPath()
-    ctx.arc(screenX, groundY - 10, 40, 0, Math.PI * 2)
+    ctx.arc(screenX, groundY + CAMPFIRE.glowY, CAMPFIRE.glowOuterRadius, 0, Math.PI * 2)
     ctx.fill()
 
     // Smoke particles
     if (s.smokeParticles) {
-      ctx.fillStyle = 'rgba(200, 200, 200, 0.3)'
+      ctx.fillStyle = COLORS.smokeColor
       for (const p of s.smokeParticles) {
         ctx.globalAlpha = p.alpha
         ctx.beginPath()
-        ctx.arc(screenX + p.x, groundY - 20 + p.y, p.size, 0, Math.PI * 2)
+        ctx.arc(screenX + p.x, groundY + CAMPFIRE.smokeY + p.y, p.size, 0, Math.PI * 2)
         ctx.fill()
       }
       ctx.globalAlpha = 1
@@ -212,270 +218,208 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     if (peek <= 0.05) return
 
     // Find nearest tree to hide behind (draw sasquatch partially behind a trunk area)
-    const treeX = screenX - 20
+    const treeX = screenX + SASQUATCH.treeXOffset
     const bodyReveal = peek // 0 to 1
 
     ctx.save()
     // Clip to only show revealed portion
     ctx.beginPath()
-    ctx.rect(treeX + 10 - bodyReveal * 35, 0, bodyReveal * 60, gameCanvas.value?.height || 800)
+    ctx.rect(treeX + SASQUATCH.clipXOffset - bodyReveal * SASQUATCH.clipWidthMin, 0, bodyReveal * SASQUATCH.clipWidthMax, gameCanvas.value?.height || 800)
     ctx.clip()
 
     ctx.strokeStyle = '#8B4513'
-    ctx.lineWidth = 3
+    ctx.lineWidth = SASQUATCH.lineWidth
 
-    const headX = treeX + 5
-    const headY = groundY - 55
+    const headX = treeX + SASQUATCH.headXOffset
+    const headY = groundY + SASQUATCH.headYOffset
 
     // Big furry body
-    ctx.fillStyle = '#5C3A1E'
+    ctx.fillStyle = COLORS.sasquatchBody
     ctx.beginPath()
-    ctx.ellipse(headX, groundY - 25, 14, 25, 0, 0, Math.PI * 2)
+    ctx.ellipse(headX, groundY - 25, SASQUATCH.bodyW, SASQUATCH.bodyH, 0, 0, Math.PI * 2)
     ctx.fill()
 
     // Head
     ctx.beginPath()
-    ctx.arc(headX, headY, 10, 0, Math.PI * 2)
+    ctx.arc(headX, headY, SASQUATCH.headRadius, 0, Math.PI * 2)
     ctx.fill()
 
     // Eyes
-    ctx.fillStyle = '#fff'
+    ctx.fillStyle = COLORS.white
     ctx.beginPath()
-    ctx.arc(headX - 3, headY - 2, 3, 0, Math.PI * 2)
-    ctx.arc(headX + 3, headY - 2, 3, 0, Math.PI * 2)
+    ctx.arc(headX + SASQUATCH.eyeLX, headY + SASQUATCH.eyeY, SASQUATCH.eyeRadius, 0, Math.PI * 2)
+    ctx.arc(headX + SASQUATCH.eyeRX, headY + SASQUATCH.eyeY, SASQUATCH.eyeRadius, 0, Math.PI * 2)
     ctx.fill()
-    ctx.fillStyle = '#000'
+    ctx.fillStyle = COLORS.black
     ctx.beginPath()
-    ctx.arc(headX - 3, headY - 2, 1.5, 0, Math.PI * 2)
-    ctx.arc(headX + 3, headY - 2, 1.5, 0, Math.PI * 2)
+    ctx.arc(headX + SASQUATCH.eyeLX, headY + SASQUATCH.eyeY, SASQUATCH.pupilRadius, 0, Math.PI * 2)
+    ctx.arc(headX + SASQUATCH.eyeRX, headY + SASQUATCH.eyeY, SASQUATCH.pupilRadius, 0, Math.PI * 2)
     ctx.fill()
 
     // Legs
-    ctx.strokeStyle = '#5C3A1E'
-    ctx.lineWidth = 5
+    ctx.strokeStyle = COLORS.sasquatchBody
+    ctx.lineWidth = SASQUATCH.legLineWidth
     ctx.beginPath()
-    ctx.moveTo(headX - 6, groundY - 5)
-    ctx.lineTo(headX - 8, groundY)
-    ctx.moveTo(headX + 6, groundY - 5)
-    ctx.lineTo(headX + 8, groundY)
+    ctx.moveTo(headX + SASQUATCH.legLX, groundY + SASQUATCH.legY)
+    ctx.lineTo(headX + SASQUATCH.legEndLX, groundY)
+    ctx.moveTo(headX + SASQUATCH.legRX, groundY + SASQUATCH.legY)
+    ctx.lineTo(headX + SASQUATCH.legEndRX, groundY)
     ctx.stroke()
 
     ctx.restore()
 
     // "Tree trunk" to hide behind (drawn on top for layering)
-    ctx.fillStyle = '#3d2817'
-    ctx.fillRect(treeX - 5, groundY - 60, 10, 60)
-    ctx.fillStyle = '#1a3d1a'
+    ctx.fillStyle = COLORS.sasquatchTreeTrunk
+    ctx.fillRect(treeX + SASQUATCH.trunkXOffset, groundY + SASQUATCH.trunkHeight, SASQUATCH.trunkWidth, -SASQUATCH.trunkHeight)
+    ctx.fillStyle = COLORS.sasquatchTreeFoliage
     ctx.beginPath()
-    ctx.moveTo(treeX, groundY - 90)
-    ctx.lineTo(treeX - 18, groundY - 55)
-    ctx.lineTo(treeX + 18, groundY - 55)
+    ctx.moveTo(treeX + SASQUATCH.foliageApexX, groundY + SASQUATCH.foliageApexY)
+    ctx.lineTo(treeX + SASQUATCH.foliageBaseXMin, groundY + SASQUATCH.foliageBaseY)
+    ctx.lineTo(treeX + SASQUATCH.foliageBaseXMax, groundY + SASQUATCH.foliageBaseY)
     ctx.closePath()
     ctx.fill()
   }
   function drawAncientRuins(screenX: number, groundY: number) {
     const ctx = getCtx()!
-    ctx.fillStyle = '#8a8070'
-    ctx.strokeStyle = '#6a6050'
-    ctx.lineWidth = 2
-
-    // Left column (broken)
-    ctx.fillRect(screenX - 30, groundY - 45, 8, 45)
-    ctx.fillRect(screenX - 34, groundY - 48, 16, 5)
-    // Broken top
-    ctx.beginPath()
-    ctx.moveTo(screenX - 34, groundY - 48)
-    ctx.lineTo(screenX - 30, groundY - 55)
-    ctx.lineTo(screenX - 22, groundY - 50)
-    ctx.lineTo(screenX - 18, groundY - 48)
-    ctx.fill()
-
-    // Right column (intact)
-    ctx.fillRect(screenX + 15, groundY - 60, 8, 60)
-    ctx.fillRect(screenX + 11, groundY - 63, 16, 5)
-    // Capital
-    ctx.fillRect(screenX + 10, groundY - 68, 18, 5)
-
-    // Lintel fragment connecting them
-    ctx.fillStyle = '#7a7060'
-    ctx.beginPath()
-    ctx.moveTo(screenX - 18, groundY - 48)
-    ctx.lineTo(screenX + 10, groundY - 65)
-    ctx.lineTo(screenX + 14, groundY - 63)
-    ctx.lineTo(screenX - 14, groundY - 46)
-    ctx.fill()
-
-    // Scattered stones
-    ctx.fillStyle = '#7a7060'
-    for (const [ox, oy, r] of [[-20, -3, 5], [5, -2, 4], [-8, -4, 6], [30, -2, 3], [35, -3, 5]] as [number, number, number][]) {
-      ctx.beginPath()
-      ctx.ellipse(screenX + ox, groundY + oy, r, r * 0.6, 0.2, 0, Math.PI * 2)
-      ctx.fill()
-    }
-
-    // Cracks on columns
-    ctx.strokeStyle = '#5a5040'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(screenX - 26, groundY - 30)
-    ctx.lineTo(screenX - 28, groundY - 20)
-    ctx.lineTo(screenX - 25, groundY - 10)
-    ctx.stroke()
-    ctx.beginPath()
-    ctx.moveTo(screenX + 19, groundY - 40)
-    ctx.lineTo(screenX + 17, groundY - 30)
-    ctx.stroke()
+    drawAncientRuinsStandalone(ctx, screenX, groundY)
   }
   function drawPhilosopher(screenX: number, groundY: number, obstacle: Obstacle) {
     const ctx = getCtx()!
     const s = obstacle.state
-    ctx.strokeStyle = '#fff'
-    ctx.lineWidth = 2
+    ctx.strokeStyle = COLORS.stickFigure
+    ctx.lineWidth = PHILOSOPHER.lineWidth
 
     // Seated position
     const headX = screenX
-    const headY = groundY - 35
+    const headY = groundY + PHILOSOPHER.headY
 
     // Head
     ctx.beginPath()
-    ctx.arc(headX, headY, 6, 0, Math.PI * 2)
+    ctx.arc(headX, headY, PHILOSOPHER.headRadius, 0, Math.PI * 2)
     ctx.stroke()
 
     // Beard
     ctx.beginPath()
-    ctx.moveTo(headX - 3, headY + 4)
-    ctx.lineTo(headX - 1, headY + 12)
-    ctx.lineTo(headX + 3, headY + 4)
+    ctx.moveTo(headX + PHILOSOPHER.beardLX, headY + PHILOSOPHER.beardLY)
+    ctx.lineTo(headX + PHILOSOPHER.beardMidX, headY + PHILOSOPHER.beardMidY)
+    ctx.lineTo(headX + PHILOSOPHER.beardRX, headY + PHILOSOPHER.beardLY)
     ctx.stroke()
 
     // Body (seated, leaning forward thoughtfully)
     ctx.beginPath()
-    ctx.moveTo(headX, headY + 6)
-    ctx.lineTo(headX - 3, groundY - 15)
+    ctx.moveTo(headX, headY + PHILOSOPHER.headRadius)
+    ctx.lineTo(headX + PHILOSOPHER.bodyX, groundY + PHILOSOPHER.bodyY)
     ctx.stroke()
 
     // Arm on chin (thinking pose)
     ctx.beginPath()
-    ctx.moveTo(headX - 3, groundY - 20)
-    ctx.lineTo(headX + 8, groundY - 25)
-    ctx.lineTo(headX + 2, headY + 5)
+    ctx.moveTo(headX + PHILOSOPHER.armThinkStartX, groundY + PHILOSOPHER.armRestY)
+    ctx.lineTo(headX + PHILOSOPHER.armThinkMidX, groundY + PHILOSOPHER.armThinkMidY)
+    ctx.lineTo(headX + PHILOSOPHER.armThinkEndX, headY + PHILOSOPHER.armThinkEndYOffset)
     ctx.stroke()
 
     // Other arm resting
     ctx.beginPath()
-    ctx.moveTo(headX - 3, groundY - 20)
-    ctx.lineTo(headX - 15, groundY - 12)
+    ctx.moveTo(headX + PHILOSOPHER.armRestStartX, groundY + PHILOSOPHER.armRestY)
+    ctx.lineTo(headX + PHILOSOPHER.armRestEndX, groundY + PHILOSOPHER.armRestEndY)
     ctx.stroke()
 
     // Legs (seated on rock)
     ctx.beginPath()
-    ctx.moveTo(headX - 3, groundY - 15)
-    ctx.lineTo(headX + 10, groundY - 10)
-    ctx.lineTo(headX + 8, groundY)
-    ctx.moveTo(headX - 3, groundY - 15)
-    ctx.lineTo(headX - 10, groundY - 8)
-    ctx.lineTo(headX - 12, groundY)
+    ctx.moveTo(headX + PHILOSOPHER.legLStartX, groundY + PHILOSOPHER.legLStartY)
+    ctx.lineTo(headX + PHILOSOPHER.legLMidX, groundY + PHILOSOPHER.legLMidY)
+    ctx.lineTo(headX + PHILOSOPHER.legLEndX, groundY)
+    ctx.moveTo(headX + PHILOSOPHER.legRStartX, groundY + PHILOSOPHER.legRStartY)
+    ctx.lineTo(headX + PHILOSOPHER.legRMidX, groundY + PHILOSOPHER.legRMidY)
+    ctx.lineTo(headX + PHILOSOPHER.legREndX, groundY)
     ctx.stroke()
 
     // Small sitting rock
-    ctx.fillStyle = '#5a5a5a'
+    ctx.fillStyle = COLORS.rockGray
     ctx.beginPath()
-    ctx.ellipse(headX - 2, groundY - 8, 12, 6, 0, 0, Math.PI * 2)
+    ctx.ellipse(headX + PHILOSOPHER.rockX, groundY + PHILOSOPHER.rockY, PHILOSOPHER.rockW, PHILOSOPHER.rockH, 0, 0, Math.PI * 2)
     ctx.fill()
 
-    // Thought bubble with rotating quotes
-    const idx = (s.thoughtIndex || 0) % philosopherThoughts.length
-    const fadePhase = (s.thoughtTimer || 0) % 5
-    let alpha = 1
-    if (fadePhase < 0.5) alpha = fadePhase * 2
-    else if (fadePhase > 4.5) alpha = (5 - fadePhase) * 2
-
-    drawBubble(headX, headY, philosopherThoughts[idx], 'thought', {
-      alpha: alpha * 0.8, font: FONTS.sm, maxWidth: 120, offsetX: 15, offsetY: -30
-    })
+    // Thought bubble drawn in drawLandmarkBubbles for top Z-order
 
     // Label
-    ctx.fillStyle = '#666'
+    ctx.fillStyle = COLORS.uiDimmer
     ctx.font = FONTS.sm
-    ctx.fillText('Socrates', screenX - 18, groundY + 12)
+    ctx.fillText('Socrates', screenX + PHILOSOPHER.labelX, groundY + PHILOSOPHER.labelY)
   }
   function drawMountainGoat(screenX: number, groundY: number, obstacle: Obstacle) {
     const ctx = getCtx()!
     const s = obstacle.state
 
     // Ledge
-    ctx.fillStyle = '#4a4a4a'
+    ctx.fillStyle = COLORS.rockDark
     ctx.beginPath()
-    ctx.moveTo(screenX - 20, groundY)
-    ctx.lineTo(screenX - 25, groundY + 8)
-    ctx.lineTo(screenX + 25, groundY + 8)
-    ctx.lineTo(screenX + 20, groundY)
+    ctx.moveTo(screenX + MOUNTAIN_GOAT.ledgeXMin, groundY + MOUNTAIN_GOAT.ledgeYMin)
+    ctx.lineTo(screenX + MOUNTAIN_GOAT.ledgeCornerXMin, groundY + MOUNTAIN_GOAT.ledgeYMax)
+    ctx.lineTo(screenX + MOUNTAIN_GOAT.ledgeCornerXMax, groundY + MOUNTAIN_GOAT.ledgeYMax)
+    ctx.lineTo(screenX + MOUNTAIN_GOAT.ledgeXMax, groundY + MOUNTAIN_GOAT.ledgeYMin)
     ctx.closePath()
     ctx.fill()
 
-    ctx.strokeStyle = '#ddd'
-    ctx.lineWidth = 2
+    ctx.strokeStyle = COLORS.dogStroke
+    ctx.lineWidth = MOUNTAIN_GOAT.lineWidth
 
     const goatX = screenX
-    const goatY = groundY - 5
+    const goatY = groundY + MOUNTAIN_GOAT.yOffset
 
     // Body
     ctx.beginPath()
-    ctx.ellipse(goatX, goatY - 12, 12, 7, 0, 0, Math.PI * 2)
+    ctx.ellipse(goatX, goatY + MOUNTAIN_GOAT.bodyY, MOUNTAIN_GOAT.bodyW, MOUNTAIN_GOAT.bodyH, 0, 0, Math.PI * 2)
     ctx.stroke()
 
     // Head
     ctx.beginPath()
-    ctx.arc(goatX + 14, goatY - 18, 5, 0, Math.PI * 2)
+    ctx.arc(goatX + MOUNTAIN_GOAT.headX, goatY + MOUNTAIN_GOAT.headY, MOUNTAIN_GOAT.headRadius, 0, Math.PI * 2)
     ctx.stroke()
 
     // Horns
     ctx.beginPath()
-    ctx.moveTo(goatX + 12, goatY - 22)
-    ctx.quadraticCurveTo(goatX + 8, goatY - 30, goatX + 5, goatY - 26)
-    ctx.moveTo(goatX + 16, goatY - 22)
-    ctx.quadraticCurveTo(goatX + 20, goatY - 30, goatX + 23, goatY - 26)
+    ctx.moveTo(goatX + MOUNTAIN_GOAT.hornLStartX, goatY + MOUNTAIN_GOAT.hornLStartY)
+    ctx.quadraticCurveTo(goatX + MOUNTAIN_GOAT.hornLCtrlX, goatY + MOUNTAIN_GOAT.hornLCtrlY, goatX + MOUNTAIN_GOAT.hornLEndX, goatY + MOUNTAIN_GOAT.hornLEndY)
+    ctx.moveTo(goatX + MOUNTAIN_GOAT.hornRStartX, goatY + MOUNTAIN_GOAT.hornRStartY)
+    ctx.quadraticCurveTo(goatX + MOUNTAIN_GOAT.hornRCtrlX, goatY + MOUNTAIN_GOAT.hornRCtrlY, goatX + MOUNTAIN_GOAT.hornREndX, goatY + MOUNTAIN_GOAT.hornREndY)
     ctx.stroke()
 
     // Eyes (with blink)
     if (!s.blinking) {
-      ctx.fillStyle = '#fff'
+      ctx.fillStyle = COLORS.white
       ctx.beginPath()
-      ctx.arc(goatX + 16, goatY - 19, 2, 0, Math.PI * 2)
+      ctx.arc(goatX + MOUNTAIN_GOAT.eyeX, goatY + MOUNTAIN_GOAT.eyeY, MOUNTAIN_GOAT.eyeRadius, 0, Math.PI * 2)
       ctx.fill()
-      ctx.fillStyle = '#000'
+      ctx.fillStyle = COLORS.black
       ctx.beginPath()
-      ctx.arc(goatX + 16, goatY - 19, 1, 0, Math.PI * 2)
+      ctx.arc(goatX + MOUNTAIN_GOAT.eyeX, goatY + MOUNTAIN_GOAT.eyeY, MOUNTAIN_GOAT.pupilRadius, 0, Math.PI * 2)
       ctx.fill()
     } else {
       ctx.beginPath()
-      ctx.moveTo(goatX + 14, goatY - 19)
-      ctx.lineTo(goatX + 18, goatY - 19)
+      ctx.moveTo(goatX + MOUNTAIN_GOAT.blinkStartX, goatY + MOUNTAIN_GOAT.blinkY)
+      ctx.lineTo(goatX + MOUNTAIN_GOAT.blinkEndX, goatY + MOUNTAIN_GOAT.blinkY)
       ctx.stroke()
     }
 
     // Goatee
     ctx.beginPath()
-    ctx.moveTo(goatX + 17, goatY - 14)
-    ctx.lineTo(goatX + 19, goatY - 10)
+    ctx.moveTo(goatX + MOUNTAIN_GOAT.goateeStartX, goatY + MOUNTAIN_GOAT.goateeStartY)
+    ctx.lineTo(goatX + MOUNTAIN_GOAT.goateeEndX, goatY + MOUNTAIN_GOAT.goateeEndY)
     ctx.stroke()
 
     // Legs
     ctx.beginPath()
-    ctx.moveTo(goatX - 8, goatY - 6)
-    ctx.lineTo(goatX - 8, goatY)
-    ctx.moveTo(goatX - 4, goatY - 6)
-    ctx.lineTo(goatX - 4, goatY)
-    ctx.moveTo(goatX + 4, goatY - 6)
-    ctx.lineTo(goatX + 4, goatY)
-    ctx.moveTo(goatX + 8, goatY - 6)
-    ctx.lineTo(goatX + 8, goatY)
+    for (const legX of MOUNTAIN_GOAT.legXPositions) {
+      ctx.moveTo(goatX + legX, goatY + MOUNTAIN_GOAT.legTopY)
+      ctx.lineTo(goatX + legX, goatY)
+    }
     ctx.stroke()
 
     // Tail
     ctx.beginPath()
-    ctx.moveTo(goatX - 12, goatY - 14)
-    ctx.lineTo(goatX - 16, goatY - 18)
+    ctx.moveTo(goatX + MOUNTAIN_GOAT.tailStartX, goatY + MOUNTAIN_GOAT.tailStartY)
+    ctx.lineTo(goatX + MOUNTAIN_GOAT.tailEndX, goatY + MOUNTAIN_GOAT.tailEndY)
     ctx.stroke()
   }
   function drawAvalancheWarning(screenX: number, groundY: number, obstacle: Obstacle) {
@@ -483,51 +427,51 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     const s = obstacle.state
 
     // Danger sign
-    ctx.fillStyle = '#cc3300'
+    ctx.fillStyle = COLORS.dangerRed
     ctx.beginPath()
-    ctx.moveTo(screenX, groundY - 55)
-    ctx.lineTo(screenX - 15, groundY - 30)
-    ctx.lineTo(screenX + 15, groundY - 30)
+    ctx.moveTo(screenX, groundY + AVALANCHE_RENDER.signTopY)
+    ctx.lineTo(screenX + AVALANCHE_RENDER.signXMin, groundY + AVALANCHE_RENDER.signBottomY)
+    ctx.lineTo(screenX + AVALANCHE_RENDER.signXMax, groundY + AVALANCHE_RENDER.signBottomY)
     ctx.closePath()
     ctx.fill()
 
     // Sign border
-    ctx.strokeStyle = '#ffcc00'
-    ctx.lineWidth = 2
+    ctx.strokeStyle = COLORS.warningYellow
+    ctx.lineWidth = AVALANCHE_RENDER.borderWidth
     ctx.beginPath()
-    ctx.moveTo(screenX, groundY - 52)
-    ctx.lineTo(screenX - 12, groundY - 32)
-    ctx.lineTo(screenX + 12, groundY - 32)
+    ctx.moveTo(screenX, groundY + AVALANCHE_RENDER.borderTopY)
+    ctx.lineTo(screenX - AVALANCHE_RENDER.borderX, groundY + AVALANCHE_RENDER.borderBottomY)
+    ctx.lineTo(screenX + AVALANCHE_RENDER.borderX, groundY + AVALANCHE_RENDER.borderBottomY)
     ctx.closePath()
     ctx.stroke()
 
     // Exclamation mark
-    ctx.fillStyle = '#ffcc00'
+    ctx.fillStyle = COLORS.warningYellow
     ctx.font = FONTS.exclamationBold
-    ctx.fillText('!', screenX - 3, groundY - 36)
+    ctx.fillText('!', screenX + AVALANCHE_RENDER.exclamationX, groundY + AVALANCHE_RENDER.exclamationY)
 
     // Sign post
-    ctx.fillStyle = '#5c4033'
-    ctx.fillRect(screenX - 2, groundY - 30, 4, 30)
+    ctx.fillStyle = COLORS.signPost
+    ctx.fillRect(screenX + AVALANCHE_RENDER.postXOffset, groundY + AVALANCHE_RENDER.postYOffset, AVALANCHE_RENDER.postWidth, AVALANCHE_RENDER.postHeight)
 
     // Falling rocks
     if (s.fallingRocks) {
-      ctx.fillStyle = '#6a6a6a'
+      ctx.fillStyle = COLORS.fallingRockFill
       for (const rock of s.fallingRocks) {
         ctx.save()
         ctx.translate(screenX + rock.x, groundY + rock.y)
         ctx.rotate(rock.rotation)
         ctx.beginPath()
-        ctx.ellipse(0, 0, rock.size, rock.size * 0.7, 0, 0, Math.PI * 2)
+        ctx.ellipse(0, 0, rock.size, rock.size * AVALANCHE_RENDER.fallingRockHeightScale, 0, 0, Math.PI * 2)
         ctx.fill()
         ctx.restore()
       }
     }
 
     // Text label
-    ctx.fillStyle = '#cc3300'
+    ctx.fillStyle = COLORS.dangerRed
     ctx.font = FONTS.tiny
-    ctx.fillText('DANGER', screenX - 16, groundY - 58)
+    ctx.fillText('DANGER', screenX + AVALANCHE_RENDER.labelX, groundY + AVALANCHE_RENDER.labelY)
   }
   function drawTheMuses(screenX: number, groundY: number, obstacle: Obstacle) {
     const ctx = getCtx()!
@@ -535,82 +479,75 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
     const laugh = s.laughPhase || 0
 
     // Ledge
-    ctx.fillStyle = '#4a4a4a'
+    ctx.fillStyle = COLORS.rockDark
     ctx.beginPath()
-    ctx.moveTo(screenX - 35, groundY - 5)
-    ctx.lineTo(screenX - 40, groundY + 5)
-    ctx.lineTo(screenX + 40, groundY + 5)
-    ctx.lineTo(screenX + 35, groundY - 5)
+    ctx.moveTo(screenX + MUSES.ledgeXMin, groundY + MUSES.ledgeYMin)
+    ctx.lineTo(screenX + MUSES.ledgeCornerXMin, groundY + MUSES.ledgeYMax)
+    ctx.lineTo(screenX + MUSES.ledgeCornerXMax, groundY + MUSES.ledgeYMax)
+    ctx.lineTo(screenX + MUSES.ledgeXMax, groundY + MUSES.ledgeYMin)
     ctx.closePath()
     ctx.fill()
 
     // Three muse figures
     for (let i = 0; i < 3; i++) {
-      const mx = screenX - 20 + i * 20
-      const bounce = Math.sin(laugh + i * 1.2) * 3
-      const headY = groundY - 40 + bounce
-      const armAngle = Math.sin(laugh + i * 0.8) * 0.3
+      const mx = screenX + MUSES.xBase + i * MUSES.xSpacing
+      const bounce = Math.sin(laugh + i * MUSES.bouncePhaseOffset) * 3
+      const headY = groundY + MUSES.headYOffset + bounce
+      const armAngle = Math.sin(laugh + i * MUSES.armAnglePhaseOffset) * MUSES.armAngleAmplitude
 
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 2
+      ctx.strokeStyle = COLORS.stickFigure
+      ctx.lineWidth = MUSES.lineWidth
 
       // Head
       ctx.beginPath()
-      ctx.arc(mx, headY, 5, 0, Math.PI * 2)
+      ctx.arc(mx, headY, MUSES.headRadius, 0, Math.PI * 2)
       ctx.stroke()
 
       // Body
       ctx.beginPath()
-      ctx.moveTo(mx, headY + 5)
-      ctx.lineTo(mx, groundY - 12)
+      ctx.moveTo(mx, headY + MUSES.bodyYOffsetHead)
+      ctx.lineTo(mx, groundY + MUSES.bodyYOffsetFoot)
       ctx.stroke()
 
       // Pointing arm (toward player direction)
       ctx.beginPath()
       ctx.moveTo(mx, headY + 10)
-      ctx.lineTo(mx - 12 - Math.sin(armAngle) * 5, headY + 5 + Math.cos(armAngle) * 3)
+      ctx.lineTo(mx + MUSES.armPointXOffset - Math.sin(armAngle) * MUSES.armPointSwingX, headY + MUSES.armPointYOffset + Math.cos(armAngle) * MUSES.armPointSwingY)
       ctx.stroke()
 
       // Other arm (on hip or gesturing)
       ctx.beginPath()
       ctx.moveTo(mx, headY + 10)
-      ctx.lineTo(mx + 8, groundY - 15 + bounce)
+      ctx.lineTo(mx + MUSES.armOtherXOffset, groundY + MUSES.armOtherYOffset + bounce)
       ctx.stroke()
 
       // Legs
       ctx.beginPath()
-      ctx.moveTo(mx, groundY - 12)
-      ctx.lineTo(mx - 6, groundY - 5)
-      ctx.moveTo(mx, groundY - 12)
-      ctx.lineTo(mx + 6, groundY - 5)
+      ctx.moveTo(mx, groundY + MUSES.bodyYOffsetFoot)
+      ctx.lineTo(mx - MUSES.legXOffset, groundY + MUSES.legYOffset)
+      ctx.moveTo(mx, groundY + MUSES.bodyYOffsetFoot)
+      ctx.lineTo(mx + MUSES.legXOffset, groundY + MUSES.legYOffset)
       ctx.stroke()
 
       // Laughing mouth (open)
-      const mouthOpen = Math.abs(Math.sin(laugh * 2 + i)) * 3
+      const mouthOpen = Math.abs(Math.sin(laugh * MUSES.laughAmpMult + i)) * 3
       ctx.beginPath()
-      ctx.arc(mx, headY + 2, 2, 0, Math.PI)
+      ctx.arc(mx, headY + MUSES.mouthRadius, MUSES.mouthRadius, 0, Math.PI)
       ctx.stroke()
       if (mouthOpen > 1) {
-        ctx.fillStyle = '#000'
+        ctx.fillStyle = COLORS.black
         ctx.beginPath()
-        ctx.ellipse(mx, headY + 2, 2, mouthOpen * 0.5, 0, 0, Math.PI * 2)
+        ctx.ellipse(mx, headY + MUSES.mouthRadius, MUSES.mouthRadius, mouthOpen * MUSES.mouthFillHeightScale, 0, 0, Math.PI * 2)
         ctx.fill()
       }
     }
 
-    // "HA HA HA" text floating up
-    const haAlpha = (Math.sin(laugh * 0.5) + 1) * 0.3 + 0.2
-    ctx.fillStyle = '#fff'
-    ctx.globalAlpha = haAlpha
-    ctx.font = FONTS.sm
-    const haY = groundY - 50 + Math.sin(laugh * 0.8) * 5
-    ctx.fillText('HA HA HA!', screenX - 22, haY)
-    ctx.globalAlpha = 1
+    // "HA HA HA" text drawn in drawLandmarkBubbles for top Z-order
 
     // Label
-    ctx.fillStyle = '#666'
+    ctx.fillStyle = COLORS.uiDimmer
     ctx.font = FONTS.sm
-    ctx.fillText('The Muses', screenX - 22, groundY + 16)
+    ctx.fillText('The Muses', screenX + MUSES.labelX, groundY + MUSES.labelY)
   }
   function drawLandmarks(width: number, height: number) {
     if (!getCtx()) return
@@ -670,7 +607,7 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
 
     world.obstacles.forEach(obstacle => {
       const screenX = obstacle.worldX - world.worldScrollX
-      if (screenX < -200 || screenX > width + 200) return
+      if (screenX < OVERLAY_CULL.xMin || screenX > width - OVERLAY_CULL.xMin) return
 
       const groundY = hillY(screenX, height)
       const s = obstacle.state
@@ -678,47 +615,58 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
       switch (obstacle.type) {
         case 'attack_birds': {
           if (!s.triggered || s.triggerComplete || !s.attackBirds) break
-          ctx.strokeStyle = '#fff'
-          ctx.lineWidth = 1.5
+          ctx.strokeStyle = COLORS.stickFigure
+          ctx.lineWidth = ATTACK_BIRDS_RENDER.lineWidth
           for (const bird of s.attackBirds) {
             const bx = screenX + bird.x
             const by = groundY + bird.y
-            const flapY = Math.sin(bird.phase) * 5
+            const flapY = Math.sin(bird.phase) * ATTACK_BIRDS_RENDER.flapAmp
             ctx.beginPath()
-            ctx.moveTo(bx - 6, by + flapY)
+            ctx.moveTo(bx + ATTACK_BIRDS_RENDER.wingXMin, by + flapY)
             ctx.lineTo(bx, by)
-            ctx.lineTo(bx + 6, by + flapY)
+            ctx.lineTo(bx + ATTACK_BIRDS_RENDER.wingXMax, by + flapY)
             ctx.stroke()
           }
-          // Angry squawks
-          if ((s.triggerTimer || 0) < 2) {
-            ctx.fillStyle = '#fff'
-            ctx.font = FONTS.sm
-            ctx.globalAlpha = Math.max(0, 1 - (s.triggerTimer || 0) * 0.5)
-            ctx.fillText('SQUAWK!', screenX - 15, groundY - 90)
-            ctx.globalAlpha = 1
-          }
+          // Angry squawks drawn in drawLandmarkBubbles for top Z-order
           break
         }
         case 'storm_cloud': {
           if (!s.triggered || s.triggerComplete) break
 
-          // Dark cloud
-          ctx.fillStyle = 'rgba(40, 40, 50, 0.8)'
+          const cloudOffsetX = s.stormCloudX || 0
+          const cloudHeight = s.stormCloudY || 0
+          const cloudCenterX = screenX + cloudOffsetX
+          const cloudCenterY = groundY - cloudHeight
+
+          // Dark cloud (larger, more menacing)
+          ctx.fillStyle = COLORS.stormCloud
           ctx.beginPath()
-          ctx.arc(screenX, groundY - 100, 35, 0, Math.PI * 2)
-          ctx.arc(screenX - 25, groundY - 90, 25, 0, Math.PI * 2)
-          ctx.arc(screenX + 30, groundY - 92, 28, 0, Math.PI * 2)
+          ctx.arc(cloudCenterX, cloudCenterY, 45, 0, Math.PI * 2)
+          ctx.arc(cloudCenterX - 35, cloudCenterY + 8, 32, 0, Math.PI * 2)
+          ctx.arc(cloudCenterX + 40, cloudCenterY + 5, 35, 0, Math.PI * 2)
+          ctx.arc(cloudCenterX - 15, cloudCenterY - 20, 28, 0, Math.PI * 2)
+          ctx.arc(cloudCenterX + 18, cloudCenterY - 18, 30, 0, Math.PI * 2)
           ctx.fill()
 
-          // Rain
-          if (s.raindrops) {
-            ctx.strokeStyle = 'rgba(150, 180, 255, 0.6)'
-            ctx.lineWidth = 1
+          // Rain (only during active phase)
+          if (s.stormPhase === 'active' && s.raindrops) {
+            ctx.strokeStyle = COLORS.rainBlue
+            ctx.lineWidth = STORM.rainLineWidth
             for (const drop of s.raindrops) {
               ctx.beginPath()
-              ctx.moveTo(screenX + drop.x, groundY + drop.y)
-              ctx.lineTo(screenX + drop.x - 1, groundY + drop.y + 6)
+              ctx.moveTo(cloudCenterX + drop.x, groundY + drop.y)
+              ctx.lineTo(cloudCenterX + drop.x - 1, groundY + drop.y + STORM.rainDropLength)
+              ctx.stroke()
+            }
+          }
+          // Drain remaining rain during departure
+          if (s.stormPhase === 'departing' && s.raindrops) {
+            ctx.strokeStyle = COLORS.rainBlue
+            ctx.lineWidth = STORM.rainLineWidth
+            for (const drop of s.raindrops) {
+              ctx.beginPath()
+              ctx.moveTo(cloudCenterX + drop.x, groundY + drop.y)
+              ctx.lineTo(cloudCenterX + drop.x - 1, groundY + drop.y + STORM.rainDropLength)
               ctx.stroke()
             }
           }
@@ -726,70 +674,156 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
           // Lightning
           if (s.lightningFlash && s.lightningFlash > 0) {
             ctx.strokeStyle = `rgba(255, 255, 200, ${s.lightningFlash})`
-            ctx.lineWidth = 3
+            ctx.lineWidth = STORM.lightningLineWidth
             ctx.beginPath()
-            const lx = screenX + (Math.random() - 0.5) * 20
-            ctx.moveTo(lx, groundY - 70)
-            ctx.lineTo(lx - 10, groundY - 40)
-            ctx.lineTo(lx + 5, groundY - 35)
+            const lx = cloudCenterX + (Math.random() - STORM.lightningRandomScale) * 30
+            ctx.moveTo(lx, cloudCenterY + 30)
+            ctx.lineTo(lx - 10, cloudCenterY + 80)
+            ctx.lineTo(lx + 5, cloudCenterY + 90)
             ctx.lineTo(lx - 8, groundY - 5)
             ctx.stroke()
 
             // Screen flash
-            ctx.fillStyle = `rgba(255, 255, 255, ${s.lightningFlash * 0.15})`
+            ctx.fillStyle = `rgba(255, 255, 255, ${s.lightningFlash * STORM.flashAlphaScale})`
             ctx.fillRect(0, 0, width, height)
           }
+
+          // Storm thought bubble drawn in drawLandmarkBubbles for top Z-order
           break
         }
         case 'alien_laser': {
           if (!s.triggered || s.triggerComplete) break
 
-          const ufoY = s.ufoY || 80
+          const ufoY = s.ufoY || OBSTACLE_BEHAVIOR.ufoDefaultY
+          const ufoOffsetX = s.ufoX || 0
+          const ufoScreenX = screenX + ufoOffsetX
 
           // UFO body
-          ctx.fillStyle = '#555'
+          ctx.fillStyle = COLORS.ufoBody
           ctx.beginPath()
-          ctx.ellipse(screenX, groundY - ufoY, 28, 9, 0, 0, Math.PI * 2)
+          ctx.ellipse(ufoScreenX, groundY - ufoY, ALIEN.ufoBodyW, ALIEN.ufoBodyH, 0, 0, Math.PI * 2)
           ctx.fill()
 
           // UFO dome
-          ctx.fillStyle = '#88f'
+          ctx.fillStyle = COLORS.ufoDome
           ctx.beginPath()
-          ctx.ellipse(screenX, groundY - ufoY - 7, 13, 10, 0, Math.PI, 0)
+          ctx.ellipse(ufoScreenX, groundY - ufoY - ALIEN.ufoDomeY, ALIEN.ufoDomeW, ALIEN.ufoDomeH, 0, Math.PI, 0)
           ctx.fill()
 
           // Rotating lights
-          ctx.fillStyle = '#0f0'
-          for (let i = 0; i < 5; i++) {
-            const angle = (i / 5) * Math.PI + s.animTimer * 6
+          ctx.fillStyle = COLORS.ufoLights
+          for (let i = 0; i < ALIEN.lightCount; i++) {
+            const angle = (i / ALIEN.lightCount) * Math.PI + s.animTimer * ALIEN.lightRotSpeed
             ctx.beginPath()
-            ctx.arc(screenX + Math.cos(angle) * 22, groundY - ufoY + 2, 2.5, 0, Math.PI * 2)
+            ctx.arc(ufoScreenX + Math.cos(angle) * ALIEN.lightCircleRadius, groundY - ufoY + ALIEN.lightY, ALIEN.lightRadius, 0, Math.PI * 2)
             ctx.fill()
           }
 
-          // Laser beam
-          if (s.laserActive) {
+          // Laser beam (only during active phase)
+          if (s.laserActive && s.ufoPhase === 'active') {
             const laserAngle = s.laserAngle || 0
-            const sweepX = Math.sin(laserAngle) * 60
+            const sweepX = Math.sin(laserAngle) * ALIEN.laserSweepDist
             ctx.save()
-            ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)'
-            ctx.lineWidth = 3
-            ctx.shadowColor = '#0f0'
-            ctx.shadowBlur = 10
+            ctx.strokeStyle = COLORS.laserGreen
+            ctx.lineWidth = ALIEN.laserLineWidth
+            ctx.shadowColor = COLORS.ufoLights
+            ctx.shadowBlur = ALIEN.laserShadowBlur
             ctx.beginPath()
-            ctx.moveTo(screenX, groundY - ufoY + 9)
-            ctx.lineTo(screenX + sweepX, groundY)
+            ctx.moveTo(ufoScreenX, groundY - ufoY + ALIEN.laserBeamYOffset)
+            ctx.lineTo(ufoScreenX + sweepX, groundY)
             ctx.stroke()
 
             // Ground impact glow
-            const impactGlow = ctx.createRadialGradient(screenX + sweepX, groundY, 0, screenX + sweepX, groundY, 20)
-            impactGlow.addColorStop(0, 'rgba(0, 255, 0, 0.4)')
-            impactGlow.addColorStop(1, 'rgba(0, 255, 0, 0)')
+            const impactGlow = ctx.createRadialGradient(ufoScreenX + sweepX, groundY, 0, ufoScreenX + sweepX, groundY, ALIEN.impactGlowRadius)
+            impactGlow.addColorStop(0, COLORS.laserImpactInner)
+            impactGlow.addColorStop(1, COLORS.laserImpactOuter)
             ctx.fillStyle = impactGlow
             ctx.beginPath()
-            ctx.arc(screenX + sweepX, groundY, 20, 0, Math.PI * 2)
+            ctx.arc(ufoScreenX + sweepX, groundY, ALIEN.impactGlowRadius, 0, Math.PI * 2)
             ctx.fill()
             ctx.restore()
+          }
+          break
+        }
+      }
+    })
+  }
+
+  /** Draws all landmark text, thought bubbles, and speech bubbles at top Z-order */
+  function drawLandmarkBubbles(width: number, height: number) {
+    const ctx = getCtx()
+    if (!ctx) return
+
+    world.obstacles.forEach(obstacle => {
+      const screenX = obstacle.worldX - world.worldScrollX
+      const cullMargin = obstacle.type === 'stray_dog' ? STRAY_DOG_CULL_MARGIN : DEFAULT_CULL_MARGIN
+      if (screenX < -cullMargin || screenX > width + cullMargin) return
+
+      const groundY = hillY(screenX, height)
+      const s = obstacle.state
+
+      switch (obstacle.type) {
+        case 'stray_dog': {
+          const dogOffsetX = s.dogX || 0
+          const x = screenX + dogOffsetX
+          const fled = s.dogFled
+          if (fled && Math.abs(dogOffsetX) > STRAY_DOG.fledCullDist) break
+          const canvas = gameCanvas.value
+          const dogGroundY = (canvas && dogOffsetX !== 0) ? hillY(x, canvas.height) : groundY
+          if (!fled && s.dogBarkTimer !== undefined && s.dogBarkTimer < STRAY_DOG.barkThreshold) {
+            ctx.fillStyle = COLORS.stickFigure
+            ctx.font = FONTS.base
+            ctx.fillText('WOOF!', x + 5, dogGroundY + STRAY_DOG.barkTextY)
+          }
+          break
+        }
+        case 'philosopher': {
+          const headX = screenX
+          const headY = groundY + PHILOSOPHER.headY
+          const idx = (s.thoughtIndex || 0) % philosopherThoughts.length
+          const fadePhase = (s.thoughtTimer || 0) % TIMING.philosopherThoughtCycle
+          let alpha = 1
+          if (fadePhase < PHILOSOPHER.thoughtFadeIn) alpha = fadePhase * 2
+          else if (fadePhase > PHILOSOPHER.thoughtFadeOutStart) alpha = (PHILOSOPHER.thoughtFadeOutDuration - fadePhase) * 2
+          drawBubble(headX, headY, philosopherThoughts[idx], 'thought', {
+            alpha: alpha * PHILOSOPHER.thoughtAlpha, font: FONTS.sm, maxWidth: PHILOSOPHER.thoughtMaxWidth, offsetX: 15, offsetY: PHILOSOPHER.thoughtYOffset
+          })
+          break
+        }
+        case 'the_muses': {
+          const laugh = s.laughPhase || 0
+          const haAlpha = (Math.sin(laugh * MUSES.laughTextAlphaSineScale) + 1) * MUSES.laughTextAlphaOffset + MUSES.laughTextAlphaMin
+          ctx.fillStyle = COLORS.stickFigure
+          ctx.globalAlpha = haAlpha
+          ctx.font = FONTS.sm
+          const haY = groundY - 50 + Math.sin(laugh * MUSES.laughTextFloatFreq) * MUSES.laughTextFloatAmp
+          ctx.fillText('HA HA HA!', screenX + MUSES.laughTextXOffset, haY)
+          ctx.globalAlpha = 1
+          break
+        }
+        case 'attack_birds': {
+          if (!s.triggered || s.triggerComplete) break
+          if ((s.triggerTimer || 0) < ATTACK_BIRDS_RENDER.squawkThreshold) {
+            ctx.fillStyle = COLORS.stickFigure
+            ctx.font = FONTS.sm
+            ctx.globalAlpha = Math.max(0, 1 - (s.triggerTimer || 0) * ATTACK_BIRDS_RENDER.squawkAlphaFade)
+            ctx.fillText('SQUAWK!', screenX + ATTACK_BIRDS_RENDER.squawkXOffset, groundY + ATTACK_BIRDS_RENDER.squawkY)
+            ctx.globalAlpha = 1
+          }
+          break
+        }
+        case 'storm_cloud': {
+          if (!s.triggered || s.triggerComplete) break
+          if (s.stormPhase === 'active' && s.stormThoughtTimer !== undefined) {
+            const thoughtIdx = (s.stormThoughtIndex || 0) % stormThoughts.length
+            const thoughtText = stormThoughts[thoughtIdx]
+            const timeSinceSwitch = TIMING.stormThoughtInterval - (s.stormThoughtTimer || 0)
+            let alpha = 1
+            if (timeSinceSwitch < PHILOSOPHER.thoughtFadeIn) alpha = timeSinceSwitch * 2
+            else if ((s.stormThoughtTimer || 0) < PHILOSOPHER.thoughtFadeIn) alpha = (s.stormThoughtTimer || 0) * 2
+            drawBubble(screenX, groundY - 30, thoughtText, 'thought', {
+              alpha: alpha * 0.9, font: FONTS.sm, maxWidth: 160, offsetX: 25, offsetY: -20
+            })
           }
           break
         }
@@ -800,5 +834,6 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
   return {
     drawLandmarks,
     drawOverlayObstacles,
+    drawLandmarkBubbles,
   }
 }

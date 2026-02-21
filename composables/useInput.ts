@@ -1,6 +1,7 @@
 import type { Ref } from 'vue'
 import type { GameState } from './useGameState'
 import { useAudio } from './useAudio'
+import { INPUT } from '~/game/constants'
 
 export function useInput(
   gameState: Ref<GameState>,
@@ -10,9 +11,9 @@ export function useInput(
   const { initAudio, play8BitSound } = useAudio()
 
   function registerTap() {
-    intensity.value = 100
+    intensity.value = INPUT.tapIntensity
     world.lastTapTime = Date.now()
-    world.armPhase = Math.PI * 0.4
+    world.armPhase = INPUT.tapArmPhase
     play8BitSound('push')
   }
 

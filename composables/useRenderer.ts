@@ -4,7 +4,13 @@ import type { Bird, Cloud, Tree, GrassTuft, Obstacle, SmokeParticle, AttackBird,
 import { PEAK_DISTANCE, LEVEL_DISTANCES, LEVEL_ANGLES, GROUND_SCREEN_Y_OFFSET } from './usePhysics'
 import { createObstacleRenderer } from './useRenderer-obstacles'
 import { createCharacterRenderer } from './useRenderer-character'
-import { COLORS, FONTS, ENVIRONMENT, TIMING, BUBBLE_DEFAULTS, fontSizePx } from '~/game/constants'
+import { drawParallaxBackground as drawParallaxBg } from './useRenderer-background'
+import { COLORS, FONTS, TIMING, BUBBLE_DEFAULTS, fontSizePx } from '~/game/constants'
+import {
+  SKY, STARS, MOON, PINE, OAK, DEAD_TREE_SHAPE, GRASS_RENDER, CLOUD_SHAPE,
+  HILL_RENDER, TREE_CULL_DISTANCE, PROMETHEUS, SPACESHIP, ENV_BIRD, LOU_BIRD, GARY_BIRD,
+  IDLE_BUBBLES,
+} from '~/game/constants-rendering'
 
 interface BubbleOptions {
   alpha?: number
@@ -237,16 +243,16 @@ export function useRenderer(deps: RendererDeps) {
 
   function drawStars(width: number, height: number, altitude: number) {
     if (!ctx) return
-    const altBrightness = Math.min(1, altitude / 2500)
-    const starCount = 100 + Math.floor(altBrightness * 80)
-    ctx.fillStyle = '#ffffff'
+    const altBrightness = Math.min(1, altitude / STARS.altitudeScale)
+    const starCount = STARS.baseCount + Math.floor(altBrightness * STARS.altitudeBonus)
+    ctx.fillStyle = COLORS.starFill
     for (let i = 0; i < starCount; i++) {
-      const x = ((Math.sin(i * 123.456) * 0.5 + 0.5) * width * 2 - world.worldScrollX * 0.02) % width
-      const y = (Math.cos(i * 789.012) * 0.5 + 0.5) * height * 0.55
-      const twinkle = Math.sin(world.gameTime * 2 + i) * 0.5 + 0.5
-      ctx.globalAlpha = (0.2 + altBrightness * 0.4) + twinkle * (0.4 + altBrightness * 0.3)
+      const x = ((Math.sin(i * STARS.seedX) * 0.5 + 0.5) * width * 2 - world.worldScrollX * STARS.parallaxRate) % width
+      const y = (Math.cos(i * STARS.seedY) * 0.5 + 0.5) * height * STARS.heightScale
+      const twinkle = Math.sin(world.gameTime * STARS.twinkleFreq + i) * 0.5 + 0.5
+      ctx.globalAlpha = (STARS.baseAlpha + altBrightness * STARS.altitudeAlphaBonus) + twinkle * (STARS.twinkleAlphaBase + altBrightness * STARS.twinkleAltitudeBonus)
       ctx.beginPath()
-      ctx.arc(x, y, twinkle * 1.5 + 0.5 + altBrightness * 0.5, 0, Math.PI * 2)
+      ctx.arc(x, y, twinkle * STARS.sizeBase + STARS.sizeOffset + altBrightness * STARS.sizeAltitudeBonus, 0, Math.PI * 2)
       ctx.fill()
     }
     ctx.globalAlpha = 1
@@ -254,148 +260,26 @@ export function useRenderer(deps: RendererDeps) {
 
   function drawMoon(width: number, height: number) {
     if (!ctx) return
-    const moonX = width - 100
-    const moonY = 70
+    const moonX = width - MOON.xFromRight
+    const moonY = MOON.y
 
-    const glow = ctx.createRadialGradient(moonX, moonY, 25, moonX, moonY, 70)
-    glow.addColorStop(0, 'rgba(255, 255, 200, 0.3)')
-    glow.addColorStop(1, 'rgba(255, 255, 200, 0)')
+    const glow = ctx.createRadialGradient(moonX, moonY, MOON.glowInnerRadius, moonX, moonY, MOON.glowOuterRadius)
+    glow.addColorStop(0, COLORS.moonGradientInner)
+    glow.addColorStop(1, COLORS.moonGradientOuter)
     ctx.fillStyle = glow
     ctx.beginPath()
-    ctx.arc(moonX, moonY, 70, 0, Math.PI * 2)
+    ctx.arc(moonX, moonY, MOON.arcRadius, 0, Math.PI * 2)
     ctx.fill()
 
-    ctx.fillStyle = '#f0f0d0'
+    ctx.fillStyle = COLORS.moonGlow
     ctx.beginPath()
-    ctx.arc(moonX, moonY, 30, 0, Math.PI * 2)
+    ctx.arc(moonX, moonY, MOON.fillRadius, 0, Math.PI * 2)
     ctx.fill()
   }
 
   function drawParallaxBackground(width: number, height: number, altitude: number) {
     if (!ctx) return
-
-    // Ground line on screen
-    const groundY = height - GROUND_SCREEN_Y_OFFSET
-    // Progress ratio: 0 at base, 1 at peak
-    const maxAlt = getHeightAtWorldDistance(PEAK_DISTANCE)
-    const t = Math.min(1, altitude / (maxAlt || 1))
-
-    // --- f) Mountains (furthest, drawn first) ---
-    const mtRise = t * 320
-    const mtBase = groundY - mtRise
-    const mtScroll = world.worldScrollX * 0.008
-    ctx.fillStyle = '#2e2850'
-    ctx.beginPath()
-    ctx.moveTo(0, mtBase + 10)
-    for (let x = 0; x <= width; x += 40) {
-      const h = Math.sin((x + mtScroll) * 0.008) * 90 +
-                Math.sin((x + mtScroll) * 0.015 + 2) * 50 +
-                Math.sin((x + mtScroll) * 0.003) * 60
-      ctx.lineTo(x, mtBase - Math.max(0, h))
-    }
-    ctx.lineTo(width, height)
-    ctx.lineTo(0, height)
-    ctx.closePath()
-    ctx.fill()
-
-    // --- e) Hills ---
-    const hlRise = t * 240
-    const hlBase = groundY - hlRise
-    const hlScroll = world.worldScrollX * 0.02
-    ctx.fillStyle = '#1e3328'
-    ctx.beginPath()
-    ctx.moveTo(0, hlBase + 10)
-    for (let x = 0; x <= width; x += 25) {
-      const h = Math.sin((x + hlScroll) * 0.012) * 55 +
-                Math.sin((x + hlScroll) * 0.025 + 1) * 30 +
-                Math.cos((x + hlScroll) * 0.007) * 35
-      ctx.lineTo(x, hlBase - Math.max(0, h))
-    }
-    ctx.lineTo(width, height)
-    ctx.lineTo(0, height)
-    ctx.closePath()
-    ctx.fill()
-
-    // --- d) Trees (far) ---
-    const tf3Rise = t * 170
-    const tf3Base = groundY - tf3Rise
-    const tf3Scroll = world.worldScrollX * 0.04
-    ctx.fillStyle = '#152a18'
-    ctx.beginPath()
-    ctx.moveTo(0, tf3Base + 5)
-    for (let x = 0; x <= width; x += 12) {
-      const h = Math.abs(Math.sin((x + tf3Scroll) * 0.06)) * 25 +
-                Math.abs(Math.sin((x + tf3Scroll) * 0.09 + 0.5)) * 15
-      ctx.lineTo(x, tf3Base - h)
-    }
-    ctx.lineTo(width, height)
-    ctx.lineTo(0, height)
-    ctx.closePath()
-    ctx.fill()
-
-    // --- c) River ---
-    const rvRise = t * 110
-    const rvBase = groundY - rvRise
-    const rvScroll = world.worldScrollX * 0.06
-
-    // River band — a flat-ish water surface
-    ctx.fillStyle = '#1a2a3a'
-    ctx.beginPath()
-    ctx.moveTo(0, rvBase + 5)
-    for (let x = 0; x <= width; x += 20) {
-      const ripple = Math.sin((x + rvScroll) * 0.04 + world.gameTime * 0.8) * 3
-      ctx.lineTo(x, rvBase + ripple)
-    }
-    ctx.lineTo(width, height)
-    ctx.lineTo(0, height)
-    ctx.closePath()
-    ctx.fill()
-
-    // Moonlight shimmer on water
-    ctx.strokeStyle = 'rgba(180, 200, 220, 0.12)'
-    ctx.lineWidth = 1.5
-    for (let i = 0; i < 8; i++) {
-      const sx = ((i * 137 + rvScroll * 0.5) % width)
-      const sy = rvBase + Math.sin(world.gameTime * 1.2 + i) * 2
-      ctx.beginPath()
-      ctx.moveTo(sx, sy)
-      ctx.lineTo(sx + 15 + Math.sin(world.gameTime + i) * 5, sy)
-      ctx.stroke()
-    }
-
-    // --- b) Trees (mid) ---
-    const tf2Rise = t * 60
-    const tf2Base = groundY - tf2Rise
-    const tf2Scroll = world.worldScrollX * 0.1
-    ctx.fillStyle = '#0d1f10'
-    ctx.beginPath()
-    ctx.moveTo(0, tf2Base + 5)
-    for (let x = 0; x <= width; x += 10) {
-      const h = Math.abs(Math.sin((x + tf2Scroll) * 0.08)) * 20 +
-                Math.abs(Math.sin((x + tf2Scroll) * 0.12 + 1)) * 12
-      ctx.lineTo(x, tf2Base - h)
-    }
-    ctx.lineTo(width, height)
-    ctx.lineTo(0, height)
-    ctx.closePath()
-    ctx.fill()
-
-    // --- a) Trees (nearest, drawn last) ---
-    const tf1Rise = t * 20
-    const tf1Base = groundY - tf1Rise
-    const tf1Scroll = world.worldScrollX * 0.18
-    ctx.fillStyle = '#0a170c'
-    ctx.beginPath()
-    ctx.moveTo(0, tf1Base + 3)
-    for (let x = 0; x <= width; x += 8) {
-      const h = Math.abs(Math.sin((x + tf1Scroll) * 0.1)) * 18 +
-                Math.abs(Math.cos((x + tf1Scroll) * 0.14 + 0.7)) * 10
-      ctx.lineTo(x, tf1Base - h)
-    }
-    ctx.lineTo(width, height)
-    ctx.lineTo(0, height)
-    ctx.closePath()
-    ctx.fill()
+    drawParallaxBg(ctx, world.worldScrollX, world.gameTime, getHeightAtWorldDistance, width, height, altitude)
   }
 
   function drawTrees(width: number, height: number, layer?: 'bg' | 'fg') {
@@ -405,7 +289,7 @@ export function useRenderer(deps: RendererDeps) {
     world.trees.forEach(tree => {
       if (layer && tree.layer !== layer) return
       const screenX = tree.worldX - world.worldScrollX
-      if (screenX < -300 || screenX > width + 300) return
+      if (screenX < -TREE_CULL_DISTANCE || screenX > width + TREE_CULL_DISTANCE) return
 
       const groundY = hillY(screenX, height)
       const size = tree.size
@@ -413,18 +297,18 @@ export function useRenderer(deps: RendererDeps) {
       if (tree.type === 'pine') {
         // Textured trunk
         c.strokeStyle = COLORS.trunkBrown
-        c.lineWidth = size * 0.08
+        c.lineWidth = size * PINE.trunkWidth
         c.beginPath()
         c.moveTo(screenX, groundY)
-        c.lineTo(screenX, groundY - size * 0.45)
+        c.lineTo(screenX, groundY - size * PINE.trunkHeight)
         c.stroke()
 
         // Three layered canopy tiers
         c.fillStyle = COLORS.pineGreen
-        for (let tier = 0; tier < 3; tier++) {
-          const tierY = groundY - size * (0.35 + tier * 0.22)
-          const tierW = size * (0.35 - tier * 0.08)
-          const tierH = size * 0.3
+        for (let tier = 0; tier < PINE.tierCount; tier++) {
+          const tierY = groundY - size * (PINE.tierYBase + tier * PINE.tierYStride)
+          const tierW = size * (PINE.tierWidthBase - tier * PINE.tierWidthDecrement)
+          const tierH = size * PINE.tierHeight
           c.beginPath()
           c.moveTo(screenX, tierY - tierH)
           c.lineTo(screenX - tierW, tierY)
@@ -434,12 +318,12 @@ export function useRenderer(deps: RendererDeps) {
         }
 
         // Highlight edges
-        c.strokeStyle = '#2a5a2a'
-        c.lineWidth = 1
-        for (let tier = 0; tier < 3; tier++) {
-          const tierY = groundY - size * (0.35 + tier * 0.22)
-          const tierW = size * (0.35 - tier * 0.08)
-          const tierH = size * 0.3
+        c.strokeStyle = COLORS.pineHighlight
+        c.lineWidth = PINE.highlightWidth
+        for (let tier = 0; tier < PINE.tierCount; tier++) {
+          const tierY = groundY - size * (PINE.tierYBase + tier * PINE.tierYStride)
+          const tierW = size * (PINE.tierWidthBase - tier * PINE.tierWidthDecrement)
+          const tierH = size * PINE.tierHeight
           c.beginPath()
           c.moveTo(screenX, tierY - tierH)
           c.lineTo(screenX - tierW, tierY)
@@ -450,62 +334,59 @@ export function useRenderer(deps: RendererDeps) {
       } else if (tree.type === 'oak') {
         // Thick trunk with bark texture
         c.strokeStyle = COLORS.trunkBrown
-        c.lineWidth = size * 0.1
+        c.lineWidth = size * OAK.trunkWidth
         c.beginPath()
         c.moveTo(screenX, groundY)
-        c.lineTo(screenX, groundY - size * 0.45)
+        c.lineTo(screenX, groundY - size * OAK.trunkHeight)
         c.stroke()
 
         // Main branches
-        c.lineWidth = size * 0.05
+        c.lineWidth = size * OAK.branchWidth
         c.beginPath()
-        c.moveTo(screenX, groundY - size * 0.4)
-        c.lineTo(screenX - size * 0.25, groundY - size * 0.6)
-        c.moveTo(screenX, groundY - size * 0.4)
-        c.lineTo(screenX + size * 0.2, groundY - size * 0.55)
+        c.moveTo(screenX, groundY - size * OAK.branchY)
+        c.lineTo(screenX - size * OAK.branchLeftX, groundY - size * OAK.branchLeftY)
+        c.moveTo(screenX, groundY - size * OAK.branchY)
+        c.lineTo(screenX + size * OAK.branchRightX, groundY - size * OAK.branchRightY)
         c.stroke()
 
         // Layered canopy (multiple overlapping circles)
         c.fillStyle = COLORS.oakGreen
         const cx = screenX
-        const cy = groundY - size * 0.65
-        const r = size * 0.3
+        const cy = groundY - size * OAK.canopyY
+        const r = size * OAK.canopyRadius
         c.beginPath()
-        c.arc(cx - r * 0.4, cy + r * 0.1, r * 0.7, 0, Math.PI * 2)
+        c.arc(cx - r * OAK.canopyLeftX, cy + r * OAK.canopyLeftY, r * OAK.canopyLeftRadius, 0, Math.PI * 2)
         c.fill()
         c.beginPath()
-        c.arc(cx + r * 0.4, cy + r * 0.15, r * 0.65, 0, Math.PI * 2)
+        c.arc(cx + r * OAK.canopyRightX, cy + r * OAK.canopyRightY, r * OAK.canopyRightRadius, 0, Math.PI * 2)
         c.fill()
         c.beginPath()
-        c.arc(cx, cy - r * 0.2, r * 0.75, 0, Math.PI * 2)
+        c.arc(cx, cy - r * OAK.canopyCenterY, r * OAK.canopyCenterRadius, 0, Math.PI * 2)
         c.fill()
         // Lighter highlight
-        c.fillStyle = '#3a5a3a'
+        c.fillStyle = COLORS.grassGreen
         c.beginPath()
-        c.arc(cx + r * 0.1, cy - r * 0.3, r * 0.4, 0, Math.PI * 2)
+        c.arc(cx + r * OAK.highlightX, cy - r * OAK.highlightY, r * OAK.highlightRadius, 0, Math.PI * 2)
         c.fill()
       } else {
         // Dead tree — gnarled trunk with multiple branches
         c.strokeStyle = COLORS.deadBranch
-        c.lineWidth = size * 0.07
+        c.lineWidth = size * DEAD_TREE_SHAPE.trunkWidth
         c.beginPath()
         c.moveTo(screenX, groundY)
-        c.lineTo(screenX + size * 0.03, groundY - size * 0.5)
-        c.lineTo(screenX - size * 0.02, groundY - size * 0.8)
+        c.lineTo(screenX + size * DEAD_TREE_SHAPE.trunk[1][0], groundY - size * Math.abs(DEAD_TREE_SHAPE.trunk[1][1]))
+        c.lineTo(screenX + size * DEAD_TREE_SHAPE.trunk[2][0], groundY - size * Math.abs(DEAD_TREE_SHAPE.trunk[2][1]))
         c.stroke()
 
         // Branches
-        c.lineWidth = size * 0.04
+        c.lineWidth = size * DEAD_TREE_SHAPE.branchWidth
         c.beginPath()
-        c.moveTo(screenX - size * 0.02, groundY - size * 0.6)
-        c.lineTo(screenX - size * 0.25, groundY - size * 0.75)
-        c.lineTo(screenX - size * 0.3, groundY - size * 0.85)
-        c.moveTo(screenX + size * 0.03, groundY - size * 0.5)
-        c.lineTo(screenX + size * 0.2, groundY - size * 0.6)
-        c.moveTo(screenX - size * 0.02, groundY - size * 0.8)
-        c.lineTo(screenX + size * 0.15, groundY - size * 0.92)
-        c.moveTo(screenX - size * 0.02, groundY - size * 0.8)
-        c.lineTo(screenX - size * 0.12, groundY - size * 0.95)
+        for (const branch of DEAD_TREE_SHAPE.branches) {
+          c.moveTo(screenX + size * branch[0][0], groundY + size * branch[0][1])
+          for (let i = 1; i < branch.length; i++) {
+            c.lineTo(screenX + size * branch[i][0], groundY + size * branch[i][1])
+          }
+        }
         c.stroke()
       }
     })
@@ -513,24 +394,24 @@ export function useRenderer(deps: RendererDeps) {
 
   function drawGrass(width: number, height: number) {
     if (!ctx) return
-    ctx.strokeStyle = '#3a5a3a'
-    ctx.lineWidth = 1
+    ctx.strokeStyle = COLORS.grassGreen
+    ctx.lineWidth = GRASS_RENDER.lineWidth
 
     world.grass.forEach(tuft => {
       const screenX = tuft.worldX - world.worldScrollX
       if (screenX < -20 || screenX > width + 20) return
 
       const groundY = hillY(screenX, height)
-      const sway = Math.sin(world.gameTime * 2 + tuft.worldX * 0.1) * 2
+      const sway = Math.sin(world.gameTime * GRASS_RENDER.swaySpeed + tuft.worldX * GRASS_RENDER.swayWorldScale) * GRASS_RENDER.swayAmp
 
       for (let i = 0; i < tuft.blades; i++) {
-        const bladeX = screenX + (i - tuft.blades / 2) * 3
+        const bladeX = screenX + (i - tuft.blades / 2) * GRASS_RENDER.bladeSpacing
         ctx!.beginPath()
         ctx!.moveTo(bladeX, groundY)
         ctx!.quadraticCurveTo(
           bladeX + sway,
-          groundY - tuft.height * 0.6,
-          bladeX + sway * 1.5,
+          groundY - tuft.height * GRASS_RENDER.curveY,
+          bladeX + sway * GRASS_RENDER.swayCurveMult,
           groundY - tuft.height
         )
         ctx!.stroke()
@@ -540,13 +421,13 @@ export function useRenderer(deps: RendererDeps) {
 
   function drawClouds(width: number) {
     if (!ctx) return
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
+    ctx.fillStyle = COLORS.cloudFill
     world.clouds.forEach(cloud => {
-      const x = ((cloud.x - world.worldScrollX * 0.05) % (width + 200))
+      const x = ((cloud.x - world.worldScrollX * CLOUD_SHAPE.parallax) % (width + CLOUD_SHAPE.wrapOffset))
       ctx!.beginPath()
-      ctx!.arc(x, cloud.y, cloud.size * 0.5, 0, Math.PI * 2)
-      ctx!.arc(x + cloud.size * 0.35, cloud.y - cloud.size * 0.15, cloud.size * 0.4, 0, Math.PI * 2)
-      ctx!.arc(x + cloud.size * 0.7, cloud.y, cloud.size * 0.45, 0, Math.PI * 2)
+      ctx!.arc(x, cloud.y, cloud.size * CLOUD_SHAPE.size1, 0, Math.PI * 2)
+      ctx!.arc(x + cloud.size * CLOUD_SHAPE.xOffset2, cloud.y - cloud.size * CLOUD_SHAPE.yOffset2, cloud.size * CLOUD_SHAPE.size2, 0, Math.PI * 2)
+      ctx!.arc(x + cloud.size * CLOUD_SHAPE.xOffset3, cloud.y, cloud.size * CLOUD_SHAPE.size3, 0, Math.PI * 2)
       ctx!.fill()
     })
   }
@@ -555,12 +436,12 @@ export function useRenderer(deps: RendererDeps) {
     if (!ctx) return
 
     const peakScreenX = PEAK_DISTANCE - world.worldScrollX
-    const drawRightEdge = width + 100
+    const drawRightEdge = width + HILL_RENDER.rightEdgeExtension
 
-    ctx.fillStyle = '#3d3d3d'
+    ctx.fillStyle = COLORS.hillFill
     ctx.beginPath()
     ctx.moveTo(0, hillY(0, height))
-    for (let x = 0; x <= drawRightEdge; x += 5) {
+    for (let x = 0; x <= drawRightEdge; x += HILL_RENDER.stepSize) {
       ctx.lineTo(x, hillY(x, height))
     }
     ctx.lineTo(drawRightEdge, height)
@@ -568,17 +449,17 @@ export function useRenderer(deps: RendererDeps) {
     ctx.closePath()
     ctx.fill()
 
-    ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 3
+    ctx.strokeStyle = COLORS.hillStroke
+    ctx.lineWidth = HILL_RENDER.strokeWidth
     ctx.beginPath()
     ctx.moveTo(0, hillY(0, height))
-    for (let x = 0; x <= drawRightEdge; x += 5) {
+    for (let x = 0; x <= drawRightEdge; x += HILL_RENDER.stepSize) {
       ctx.lineTo(x, hillY(x, height))
     }
     ctx.stroke()
 
-    ctx.strokeStyle = '#666'
-    ctx.lineWidth = 1
+    ctx.strokeStyle = COLORS.levelMarker
+    ctx.lineWidth = HILL_RENDER.markerWidth
     for (let level = 2; level <= 6; level++) {
       const markerWorldX = LEVEL_DISTANCES[level - 1]
       // Draw on both sides of the peak
@@ -589,202 +470,203 @@ export function useRenderer(deps: RendererDeps) {
           const y = hillY(screenX, height)
           ctx.beginPath()
           ctx.moveTo(screenX, y)
-          ctx.lineTo(screenX, y - 20)
+          ctx.lineTo(screenX, y - HILL_RENDER.markerHeight)
           ctx.stroke()
 
-          ctx.fillStyle = '#666'
+          ctx.fillStyle = COLORS.levelMarker
           ctx.font = FONTS.base
-          ctx.fillText(`L${level}`, screenX - 8, y - 25)
+          ctx.fillText(`L${level}`, screenX - HILL_RENDER.levelTextXOffset, y - HILL_RENDER.levelTextYOffset)
         }
       }
     }
 
     if (peakScreenX > 0 && peakScreenX < width) {
-      ctx.fillStyle = '#ffd700'
+      ctx.fillStyle = COLORS.peakGold
       ctx.beginPath()
-      ctx.moveTo(peakScreenX, hillY(peakScreenX, height) - 10)
-      ctx.lineTo(peakScreenX - 8, hillY(peakScreenX, height) + 5)
-      ctx.lineTo(peakScreenX + 8, hillY(peakScreenX, height) + 5)
+      ctx.moveTo(peakScreenX, hillY(peakScreenX, height) - HILL_RENDER.peakMarkerHeight)
+      ctx.lineTo(peakScreenX - HILL_RENDER.peakMarkerLeftX, hillY(peakScreenX, height) + HILL_RENDER.peakMarkerY)
+      ctx.lineTo(peakScreenX + HILL_RENDER.peakMarkerRightX, hillY(peakScreenX, height) + HILL_RENDER.peakMarkerY)
       ctx.closePath()
       ctx.fill()
 
-      ctx.fillStyle = '#ffd700'
+      ctx.fillStyle = COLORS.peakGold
       ctx.font = FONTS.lg
-      ctx.fillText('PEAK', peakScreenX - 18, hillY(peakScreenX, height) - 15)
+      ctx.fillText('PEAK', peakScreenX - HILL_RENDER.peakTextXOffset, hillY(peakScreenX, height) - HILL_RENDER.peakTextYOffset)
     }
   }
 
   function drawPrometheus(width: number, height: number) {
     if (!ctx) return
+    const P = PROMETHEUS
     const screenX = world.prometheusDistance - world.worldScrollX
     if (screenX < -100 || screenX > width + 150) return
 
     const groundY = hillY(screenX, height)
 
-    const embedX = screenX + 40
-    const embedY = groundY + 25
-    const scale = 1.5
+    const embedX = screenX + P.embedX
+    const embedY = groundY + P.embedY
+    const scale = P.scale
 
     // Rock (organic bezier shape)
-    ctx.fillStyle = '#555'
+    ctx.fillStyle = COLORS.rockFill
     ctx.beginPath()
-    ctx.moveTo(embedX - 40 * scale, groundY + 5)
+    ctx.moveTo(embedX + P.rock.leftX * scale, groundY + 5)
     ctx.bezierCurveTo(
-      embedX - 45 * scale, groundY - 20,
-      embedX - 10 * scale, groundY - 25,
-      embedX + 30 * scale, groundY - 10
+      embedX + P.rock.topBezLeftX * scale, groundY + P.rock.topBezLeftY,
+      embedX + P.rock.topPeakX * scale, groundY + P.rock.topPeakY,
+      embedX + P.rock.rightX * scale, groundY + P.rock.rightY
     )
     ctx.bezierCurveTo(
-      embedX + 45 * scale, groundY,
-      embedX + 42 * scale, embedY + 20 * scale,
-      embedX + 30 * scale, embedY + 30 * scale
+      embedX + P.rock.rightBezX * scale, groundY,
+      embedX + P.rock.bodyRightX * scale, embedY + P.rock.bodyRightY * scale,
+      embedX + P.rock.bottomRightX * scale, embedY + P.rock.bottomRightY * scale
     )
     ctx.bezierCurveTo(
-      embedX + 10 * scale, embedY + 40 * scale,
-      embedX - 25 * scale, embedY + 38 * scale,
-      embedX - 40 * scale, groundY + 5
+      embedX + P.rock.bottomMidX * scale, embedY + P.rock.bottomMidY * scale,
+      embedX + P.rock.bottomLeftX * scale, embedY + P.rock.bottomLeftY * scale,
+      embedX + P.rock.leftX * scale, groundY + 5
     )
     ctx.closePath()
     ctx.fill()
-    ctx.strokeStyle = '#777'
+    ctx.strokeStyle = COLORS.rockStroke
     ctx.lineWidth = 1
     ctx.stroke()
 
     // Prometheus figure
-    ctx.strokeStyle = '#fff'
-    ctx.lineWidth = 2.5
+    ctx.strokeStyle = COLORS.stickFigure
+    ctx.lineWidth = P.lineWidth
 
     // Head
     ctx.beginPath()
-    ctx.arc(embedX, embedY - 12 * scale, 8 * scale, 0, Math.PI * 2)
+    ctx.arc(embedX, embedY + P.headY * scale, P.headRadius * scale, 0, Math.PI * 2)
     ctx.stroke()
 
     // Body
     ctx.beginPath()
-    ctx.moveTo(embedX, embedY - 4 * scale)
-    ctx.lineTo(embedX, embedY + 22 * scale)
+    ctx.moveTo(embedX, embedY + P.bodyTopY * scale)
+    ctx.lineTo(embedX, embedY + P.bodyBottomY * scale)
     ctx.stroke()
 
     // Arms
     ctx.beginPath()
-    ctx.moveTo(embedX - 25 * scale, embedY)
-    ctx.lineTo(embedX, embedY + 5 * scale)
-    ctx.lineTo(embedX + 25 * scale, embedY)
+    ctx.moveTo(embedX - P.armX * scale, embedY)
+    ctx.lineTo(embedX, embedY + P.armY * scale)
+    ctx.lineTo(embedX + P.armX * scale, embedY)
     ctx.stroke()
 
     // Chains
-    ctx.strokeStyle = '#888'
-    ctx.lineWidth = 1.5
-    ctx.setLineDash([3, 3])
+    ctx.strokeStyle = COLORS.chainColor
+    ctx.lineWidth = P.chainLineWidth
+    ctx.setLineDash([P.chainDash, P.chainDash])
     ctx.beginPath()
-    ctx.moveTo(embedX - 25 * scale, embedY)
-    ctx.lineTo(embedX - 35 * scale, embedY - 15)
-    ctx.moveTo(embedX + 25 * scale, embedY)
-    ctx.lineTo(embedX + 35 * scale, embedY - 15)
+    ctx.moveTo(embedX - P.chainStartX * scale, embedY)
+    ctx.lineTo(embedX - P.chainEndX * scale, embedY - P.chainY)
+    ctx.moveTo(embedX + P.chainStartX * scale, embedY)
+    ctx.lineTo(embedX + P.chainEndX * scale, embedY - P.chainY)
     ctx.stroke()
     ctx.setLineDash([])
 
     // Legs
-    ctx.strokeStyle = '#fff'
-    ctx.lineWidth = 2.5
+    ctx.strokeStyle = COLORS.stickFigure
+    ctx.lineWidth = P.lineWidth
     ctx.beginPath()
-    ctx.moveTo(embedX, embedY + 22 * scale)
-    ctx.lineTo(embedX - 8 * scale, embedY + 40 * scale)
-    ctx.moveTo(embedX, embedY + 22 * scale)
-    ctx.lineTo(embedX + 8 * scale, embedY + 40 * scale)
+    ctx.moveTo(embedX, embedY + P.bodyBottomY * scale)
+    ctx.lineTo(embedX - P.legX * scale, embedY + P.legY * scale)
+    ctx.moveTo(embedX, embedY + P.bodyBottomY * scale)
+    ctx.lineTo(embedX + P.legX * scale, embedY + P.legY * scale)
     ctx.stroke()
 
     // Blood
-    ctx.strokeStyle = '#8b0000'
-    ctx.lineWidth = 1.5
-    const bloodDrip = (world.gameTime * 20) % 30
-    for (let i = 0; i < 3; i++) {
-      const startY = embedY + 10 * scale + i * 5
-      const dripLength = 15 + Math.sin(world.gameTime * 2 + i) * 5
+    ctx.strokeStyle = COLORS.bloodRed
+    ctx.lineWidth = P.bloodLineWidth
+    const bloodDrip = (world.gameTime * P.bloodDripSpeed) % P.bloodDripCycle
+    for (let i = 0; i < P.bloodDripCount; i++) {
+      const startY = embedY + P.bloodDripYOffset * scale + i * P.bloodDripYSpacing
+      const dripLength = P.bloodDripLengthBase + Math.sin(world.gameTime * P.bloodDripWaveSpeed + i) * P.bloodDripLengthAmp
       ctx.beginPath()
-      ctx.moveTo(embedX - 3 + i * 3, startY)
+      ctx.moveTo(embedX - P.bloodXStride + i * P.bloodXStride, startY)
       ctx.quadraticCurveTo(
-        embedX - 5 + i * 3 + Math.sin(world.gameTime + i) * 2,
+        embedX - P.bloodCurveXAmp + i * P.bloodXStride + Math.sin(world.gameTime + i) * P.bloodCurveXSpeed,
         startY + dripLength / 2,
-        embedX - 4 + i * 3,
-        startY + dripLength + (bloodDrip + i * 10) % 20
+        embedX - P.bloodXStride - 1 + i * P.bloodXStride,
+        startY + dripLength + (bloodDrip + i * P.bloodCycleStride) % P.bloodBaseYOffset
       )
       ctx.stroke()
     }
 
     // Vulture
-    const vultureBob = Math.sin(world.gameTime * 3) * 3
-    ctx.strokeStyle = '#fff'
+    const vultureBob = Math.sin(world.gameTime * P.vultureBobSpeed) * P.vultureBobAmp
+    ctx.strokeStyle = COLORS.stickFigure
     ctx.lineWidth = 2
     ctx.beginPath()
-    ctx.ellipse(embedX - 18 * scale, embedY + 14 * scale + vultureBob, 10 * scale, 6 * scale, -0.3, 0, Math.PI * 2)
+    ctx.ellipse(embedX + P.vultureBodyX * scale, embedY + P.vultureBodyY * scale + vultureBob, P.vultureBodyW * scale, P.vultureBodyH * scale, P.vultureBodyRot, 0, Math.PI * 2)
     ctx.stroke()
     ctx.beginPath()
-    ctx.arc(embedX - 6 * scale, embedY + 10 * scale + vultureBob, 5 * scale, 0, Math.PI * 2)
+    ctx.arc(embedX + P.vultureHeadX * scale, embedY + P.vultureHeadY * scale + vultureBob, P.vultureHeadR * scale, 0, Math.PI * 2)
     ctx.stroke()
     ctx.beginPath()
-    ctx.moveTo(embedX - 3 * scale, embedY + 10 * scale + vultureBob)
-    ctx.lineTo(embedX + 2, embedY + 12 * scale + vultureBob)
+    ctx.moveTo(embedX + P.vultureBeakStartX * scale, embedY + P.vultureHeadY * scale + vultureBob)
+    ctx.lineTo(embedX + P.vultureBeakEndX, embedY + P.vultureBeakY * scale + vultureBob)
     ctx.stroke()
     ctx.beginPath()
-    ctx.moveTo(embedX - 30 * scale, embedY + 6 * scale + vultureBob)
-    ctx.lineTo(embedX - 18 * scale, embedY + 14 * scale + vultureBob)
-    ctx.lineTo(embedX - 30 * scale, embedY + 22 * scale + vultureBob)
+    ctx.moveTo(embedX + P.vultureWingLeftStartX * scale, embedY + P.vultureWingLeftStartY * scale + vultureBob)
+    ctx.lineTo(embedX + P.vultureWingLeftBodyX * scale, embedY + P.vultureWingLeftBodyY * scale + vultureBob)
+    ctx.lineTo(embedX + P.vultureWingLeftEndX * scale, embedY + P.vultureWingLeftEndY * scale + vultureBob)
     ctx.stroke()
 
     // Ouch text
-    const ouchPhase = Math.floor(world.gameTime * 2) % 4
-    const ouchTexts = ['ouch...', 'ow...', 'ouch...', 'ugh...']
-    ctx.fillStyle = '#fff'
+    const ouchPhase = Math.floor(world.gameTime * 2) % P.ouchCycleLength
+    ctx.fillStyle = COLORS.stickFigure
     ctx.font = FONTS.md
-    const ouchAlpha = 0.5 + Math.sin(world.gameTime * 4) * 0.3
+    const ouchAlpha = P.ouchAlphaBase + Math.sin(world.gameTime * P.ouchBlinkSpeed) * P.ouchAlphaVar
     ctx.globalAlpha = ouchAlpha
-    ctx.fillText(ouchTexts[ouchPhase], embedX - 45, embedY - 25 * scale)
+    ctx.fillText(P.ouchTexts[ouchPhase], embedX + P.ouchTextX, embedY - P.chainStartX * scale)
     ctx.globalAlpha = 1
 
     // Dialogue exchange
     if (world.prometheusActiveExchange) {
       const ex = world.prometheusActiveExchange
-      const alpha = ex.timer < 0.5 ? ex.timer * 2 : ex.fadeIn
+      const alpha = ex.timer < TIMING.prometheusExchangePause ? ex.timer * 2 : ex.fadeIn
       if (ex.speaker === 'prometheus') {
         drawBubble(embedX, embedY - 15 * scale, ex.text, 'speech', {
-          alpha, font: FONTS.base, maxWidth: 150, offsetX: -60, offsetY: -40
+          alpha, font: FONTS.base, maxWidth: P.bubbleMaxWidth, offsetX: P.bubbleXOffset, offsetY: P.bubbleYOffset
         })
       } else {
         // Sisyphus speech — draw near the player position
         const playerScreenX = world.worldDistance - world.worldScrollX
-        const playerY = hillY(playerScreenX, height) - 50
+        const playerY = hillY(playerScreenX, height) + P.playerBubbleYOffset
         drawBubble(playerScreenX, playerY, ex.text, 'speech', {
-          alpha, font: FONTS.base, maxWidth: 150, offsetX: 20, offsetY: -30
+          alpha, font: FONTS.base, maxWidth: P.bubbleMaxWidth, offsetX: P.playerBubbleXOffset, offsetY: P.playerBubbleYOffset2
         })
       }
     }
 
-    ctx.fillStyle = '#666'
+    ctx.fillStyle = COLORS.uiDimmer
     ctx.font = FONTS.base
-    ctx.fillText('Prometheus', screenX + 10, groundY + 70)
+    ctx.fillText('Prometheus', screenX + P.labelX, groundY + P.labelY)
   }
 
   function drawSpaceship() {
     if (!ctx || !world.spaceshipActive) return
     const x = world.spaceshipX
     const y = world.spaceshipY
+    const S = SPACESHIP
 
-    ctx.fillStyle = '#555'
+    ctx.fillStyle = COLORS.ufoBody
     ctx.beginPath()
-    ctx.ellipse(x, y, 28, 9, 0, 0, Math.PI * 2)
+    ctx.ellipse(x, y, S.bodyW, S.bodyH, 0, 0, Math.PI * 2)
     ctx.fill()
 
-    ctx.fillStyle = '#88f'
+    ctx.fillStyle = COLORS.ufoDome
     ctx.beginPath()
-    ctx.ellipse(x, y - 7, 13, 10, 0, Math.PI, 0)
+    ctx.ellipse(x, y - S.domeY, S.domeW, S.domeH, 0, Math.PI, 0)
     ctx.fill()
 
     ctx.fillStyle = '#ff0'
-    for (let i = 0; i < 5; i++) {
-      const angle = (i / 5) * Math.PI + world.gameTime * 6
+    for (let i = 0; i < S.lightCount; i++) {
+      const angle = (i / S.lightCount) * Math.PI + world.gameTime * S.lightRotSpeed
       ctx.beginPath()
-      ctx.arc(x + Math.cos(angle) * 22, y + 2, 2.5, 0, Math.PI * 2)
+      ctx.arc(x + Math.cos(angle) * S.lightCircleRadius, y + S.lightY, S.lightPointRadius, 0, Math.PI * 2)
       ctx.fill()
     }
   }
@@ -792,76 +674,77 @@ export function useRenderer(deps: RendererDeps) {
   function drawBirds(width: number, height: number) {
     if (!ctx) return
     world.birds.forEach(bird => {
-      const flapY = Math.sin(bird.flapPhase) * 4
-      ctx!.strokeStyle = '#fff'
-      ctx!.lineWidth = 1
+      const flapY = Math.sin(bird.flapPhase) * ENV_BIRD.flapAmp
+      ctx!.strokeStyle = COLORS.stickFigure
+      ctx!.lineWidth = ENV_BIRD.lineWidth
       ctx!.beginPath()
-      ctx!.moveTo(bird.x - 4, bird.y + flapY)
+      ctx!.moveTo(bird.x - ENV_BIRD.wingSpan, bird.y + flapY)
       ctx!.lineTo(bird.x, bird.y)
-      ctx!.lineTo(bird.x + 4, bird.y + flapY)
+      ctx!.lineTo(bird.x + ENV_BIRD.wingSpan, bird.y + flapY)
       ctx!.stroke()
     })
 
     // Idle harassment bird (Lou) — large, menacing
     if (world.idleBird) {
       const bird = world.idleBird
+      const L = LOU_BIRD
       const groundY = hillY(bird.x, height)
-      const birdY = groundY - 60 - bird.y
+      const birdY = groundY - L.groundOffset - bird.y
 
       ctx!.save()
       ctx!.translate(bird.x, birdY)
 
-      ctx!.strokeStyle = '#fff'
-      ctx!.lineWidth = 2.5
-      const flapY = Math.sin(bird.swoopPhase * 6) * 15
+      ctx!.strokeStyle = COLORS.stickFigure
+      ctx!.lineWidth = L.lineWidth
+      const flapY = Math.sin(bird.swoopPhase * L.swoopFreqMult) * L.swoopAmp
 
       // Body
       ctx!.beginPath()
-      ctx!.ellipse(0, 0, 14, 5, 0, 0, Math.PI * 2)
+      ctx!.ellipse(0, 0, L.bodyW, L.bodyH, 0, 0, Math.PI * 2)
       ctx!.stroke()
 
       // Wings
-      ctx!.lineWidth = 2
+      ctx!.lineWidth = L.wingLineWidth
       ctx!.beginPath()
-      ctx!.moveTo(-6, 0)
-      ctx!.quadraticCurveTo(-16, flapY - 12, -26, flapY - 6)
-      ctx!.moveTo(6, 0)
-      ctx!.quadraticCurveTo(16, flapY - 12, 26, flapY - 6)
+      ctx!.moveTo(-L.wingStartX, 0)
+      ctx!.quadraticCurveTo(-L.wingCurveX, flapY - L.wingFlapCurveY, -L.wingEndX, flapY - L.wingFlapEndY)
+      ctx!.moveTo(L.wingStartX, 0)
+      ctx!.quadraticCurveTo(L.wingCurveX, flapY - L.wingFlapCurveY, L.wingEndX, flapY - L.wingFlapEndY)
       ctx!.stroke()
 
       // Talons
-      ctx!.strokeStyle = '#ccc'
-      ctx!.lineWidth = 1.5
+      ctx!.strokeStyle = COLORS.talonColor
+      ctx!.lineWidth = L.talonLineWidth
       ctx!.beginPath()
-      ctx!.moveTo(-3, 5)
-      ctx!.lineTo(-4, 12)
-      ctx!.lineTo(-7, 15)
-      ctx!.moveTo(-4, 12)
-      ctx!.lineTo(-2, 16)
-      ctx!.moveTo(3, 5)
-      ctx!.lineTo(4, 12)
-      ctx!.lineTo(7, 15)
-      ctx!.moveTo(4, 12)
-      ctx!.lineTo(2, 16)
+      ctx!.moveTo(-L.talonLeftStartX, 5)
+      ctx!.lineTo(-L.talonLeftStartX - 1, L.talonLength)
+      ctx!.lineTo(-L.talonSpread, L.talonBottomY)
+      ctx!.moveTo(-L.talonLeftStartX - 1, L.talonLength)
+      ctx!.lineTo(-L.talonLeftStartX + 1, L.talonBottomY + 1)
+      ctx!.moveTo(L.talonLeftStartX, 5)
+      ctx!.lineTo(L.talonLeftStartX + 1, L.talonLength)
+      ctx!.lineTo(L.talonSpread, L.talonBottomY)
+      ctx!.moveTo(L.talonLeftStartX + 1, L.talonLength)
+      ctx!.lineTo(L.talonLeftStartX - 1, L.talonBottomY + 1)
       ctx!.stroke()
 
       // Beak — hooked
-      ctx!.strokeStyle = '#fff'
+      ctx!.strokeStyle = COLORS.stickFigure
       ctx!.lineWidth = 2
       ctx!.beginPath()
-      ctx!.moveTo(14, -2)
-      ctx!.lineTo(22, 1)
-      ctx!.lineTo(20, 5)
+      ctx!.moveTo(L.beakStartX, L.beakStartY)
+      ctx!.lineTo(L.beakEndX, L.beakEndY)
+      ctx!.lineTo(L.beakEndX - 2, L.beakBottomY)
       ctx!.stroke()
 
       // Angry eye
-      ctx!.fillStyle = '#fff'
+      ctx!.fillStyle = COLORS.stickFigure
       ctx!.beginPath()
-      ctx!.arc(8, -3, 2, 0, Math.PI * 2)
+      ctx!.arc(L.eyeX, L.eyeY, L.eyeRadius, 0, Math.PI * 2)
       ctx!.fill()
-      ctx!.fillStyle = '#000'
+      ctx!.fillStyle = COLORS.black
       ctx!.beginPath()
-      ctx!.arc(8.5, -2.5, 1, 0, Math.PI * 2)
+      ctx!.arc(L.pupilX, L.pupilY, L.pupilRadius, 0, Math.PI * 2)
       ctx!.fill()
 
       ctx!.restore()
@@ -871,75 +754,76 @@ export function useRenderer(deps: RendererDeps) {
     // Gary bird (second idle bird — lands near player)
     if (world.garyBird) {
       const gary = world.garyBird
+      const G = GARY_BIRD
       const playerScreenX = world.worldDistance - world.worldScrollX
       const groundY = hillY(gary.x, height)
-      const garyY = gary.landed ? groundY : (groundY - 60 - gary.y)
+      const garyY = gary.landed ? groundY : (groundY - LOU_BIRD.groundOffset - gary.y)
 
       ctx!.save()
       ctx!.translate(gary.x, garyY)
 
-      ctx!.strokeStyle = '#fff'
-      ctx!.lineWidth = 2.5
+      ctx!.strokeStyle = COLORS.stickFigure
+      ctx!.lineWidth = G.lineWidth
 
       if (gary.landed && !gary.flyingAway) {
         // Standing bird on ground — body pointing right, wings folded
         ctx!.beginPath()
-        ctx!.ellipse(0, -5, 12, 5, 0.2, 0, Math.PI * 2)
+        ctx!.ellipse(0, G.landedBodyY, G.landedBodyW, G.landedBodyH, G.landedBodyRot, 0, Math.PI * 2)
         ctx!.stroke()
         // Head
         ctx!.beginPath()
-        ctx!.arc(10, -10, 4, 0, Math.PI * 2)
+        ctx!.arc(G.landedHeadX, G.landedHeadY, G.landedHeadR, 0, Math.PI * 2)
         ctx!.stroke()
         // Beak
         ctx!.beginPath()
-        ctx!.moveTo(14, -10)
-        ctx!.lineTo(19, -9)
-        ctx!.lineTo(14, -8)
+        ctx!.moveTo(G.landedBeakStartX, G.landedBeakStartY)
+        ctx!.lineTo(G.landedBeakEndX, G.landedBeakEndY)
+        ctx!.lineTo(G.landedBeakStartX, G.landedBeakBottomY)
         ctx!.stroke()
         // Legs
-        ctx!.strokeStyle = '#ccc'
-        ctx!.lineWidth = 1.5
+        ctx!.strokeStyle = COLORS.talonColor
+        ctx!.lineWidth = LOU_BIRD.talonLineWidth
         ctx!.beginPath()
-        ctx!.moveTo(-2, 0)
-        ctx!.lineTo(-4, 8)
-        ctx!.lineTo(-7, 10)
-        ctx!.moveTo(-4, 8)
-        ctx!.lineTo(-1, 10)
-        ctx!.moveTo(4, 0)
-        ctx!.lineTo(6, 8)
-        ctx!.lineTo(3, 10)
-        ctx!.moveTo(6, 8)
-        ctx!.lineTo(9, 10)
+        ctx!.moveTo(G.landedTalonLeftStartX, 0)
+        ctx!.lineTo(G.landedTalonLeftX, G.landedTalonLength)
+        ctx!.lineTo(-G.landedTalonSpread, G.landedTalonBottomY)
+        ctx!.moveTo(G.landedTalonLeftX, G.landedTalonLength)
+        ctx!.lineTo(-1, G.landedTalonBottomY)
+        ctx!.moveTo(G.landedTalonRightStartX, 0)
+        ctx!.lineTo(G.landedTalonRightX, G.landedTalonLength)
+        ctx!.lineTo(G.landedTalonSpread - 4, G.landedTalonBottomY)
+        ctx!.moveTo(G.landedTalonRightX, G.landedTalonLength)
+        ctx!.lineTo(G.landedTalonSpread + 2, G.landedTalonBottomY)
         ctx!.stroke()
         // Eye
-        ctx!.fillStyle = '#fff'
+        ctx!.fillStyle = COLORS.stickFigure
         ctx!.beginPath()
-        ctx!.arc(11, -11, 1.5, 0, Math.PI * 2)
+        ctx!.arc(G.landedEyeX, G.landedEyeY, G.landedEyeRadius, 0, Math.PI * 2)
         ctx!.fill()
-        ctx!.fillStyle = '#000'
+        ctx!.fillStyle = COLORS.black
         ctx!.beginPath()
-        ctx!.arc(11.5, -11, 0.8, 0, Math.PI * 2)
+        ctx!.arc(G.landedPupilX, G.landedPupilY, G.landedPupilRadius, 0, Math.PI * 2)
         ctx!.fill()
       } else {
         // Flying Gary
-        const flapY = Math.sin(gary.phase * 6) * 15
+        const flapY = Math.sin(gary.phase * G.flyingSwoopFreqMult) * G.flyingSwoopAmp
         ctx!.beginPath()
-        ctx!.ellipse(0, 0, 12, 5, 0, 0, Math.PI * 2)
+        ctx!.ellipse(0, 0, G.flyingBodyW, G.flyingBodyH, 0, 0, Math.PI * 2)
         ctx!.stroke()
         ctx!.lineWidth = 2
         ctx!.beginPath()
-        ctx!.moveTo(-5, 0)
-        ctx!.quadraticCurveTo(-14, flapY - 10, -22, flapY - 5)
-        ctx!.moveTo(5, 0)
-        ctx!.quadraticCurveTo(14, flapY - 10, 22, flapY - 5)
+        ctx!.moveTo(-G.flyingWingStartX, 0)
+        ctx!.quadraticCurveTo(-G.flyingWingCurveX, flapY - G.flyingWingFlapCurveY, -G.flyingWingEndX, flapY - G.flyingWingFlapEndY)
+        ctx!.moveTo(G.flyingWingStartX, 0)
+        ctx!.quadraticCurveTo(G.flyingWingCurveX, flapY - G.flyingWingFlapCurveY, G.flyingWingEndX, flapY - G.flyingWingFlapEndY)
         ctx!.stroke()
         // Beak
         ctx!.lineWidth = 2
         const flyDir = gary.flyingAway ? -1 : 1
         ctx!.beginPath()
-        ctx!.moveTo(12 * flyDir, -2)
-        ctx!.lineTo(18 * flyDir, 0)
-        ctx!.lineTo(12 * flyDir, 2)
+        ctx!.moveTo(G.flyingBeakStartX * flyDir, G.flyingBeakStartY)
+        ctx!.lineTo(G.flyingBeakEndX * flyDir, G.flyingBeakEndY)
+        ctx!.lineTo(G.flyingBeakStartX * flyDir, G.flyingBeakBottomY)
         ctx!.stroke()
       }
 
@@ -956,10 +840,10 @@ export function useRenderer(deps: RendererDeps) {
     if (world.garyBird && world.garyBird.flyingAway && world.garyBird.thought && world.garyBird.thoughtTimer > 0) {
       const gary = world.garyBird
       const garyGroundY = hillY(gary.x, height)
-      const garyY = garyGroundY - 60 - gary.y
+      const garyY = garyGroundY - LOU_BIRD.groundOffset - gary.y
       const alpha = Math.min(1, gary.thoughtTimer)
-      drawBubble(gary.x, garyY - 20, gary.thought, 'thought', {
-        alpha, font: FONTS.sm, maxWidth: 160, offsetX: -20, offsetY: -30
+      drawBubble(gary.x, garyY - GARY_BIRD.departingBubbleYOffset, gary.thought, 'thought', {
+        alpha, font: FONTS.sm, maxWidth: IDLE_BUBBLES.garyMaxWidth, offsetX: IDLE_BUBBLES.garyXOffset, offsetY: IDLE_BUBBLES.garyYOffset
       })
     }
 
@@ -972,15 +856,15 @@ export function useRenderer(deps: RendererDeps) {
 
         if (line.speaker === 'lou' && world.idleBird) {
           const birdGroundY = hillY(world.idleBird.x, height)
-          const birdY = birdGroundY - 60 - world.idleBird.y
-          drawBubble(world.idleBird.x, birdY - 10, line.text, 'speech', {
-            alpha, font: FONTS.sm, maxWidth: 180, offsetX: -30, offsetY: -35
+          const birdY = birdGroundY - LOU_BIRD.groundOffset - world.idleBird.y
+          drawBubble(world.idleBird.x, birdY - IDLE_BUBBLES.louBubbleYOffset, line.text, 'speech', {
+            alpha, font: FONTS.sm, maxWidth: IDLE_BUBBLES.dialogueMaxWidth, offsetX: IDLE_BUBBLES.dialogueXOffset, offsetY: IDLE_BUBBLES.dialogueYOffset
           })
         } else if (line.speaker === 'gary' && world.garyBird) {
           const garyGroundY = hillY(world.garyBird.x, height)
-          const garyY = world.garyBird.landed ? garyGroundY - 18 : (garyGroundY - 60 - world.garyBird.y)
+          const garyY = world.garyBird.landed ? garyGroundY - GARY_BIRD.landedGroundOffset : (garyGroundY - LOU_BIRD.groundOffset - world.garyBird.y)
           drawBubble(world.garyBird.x, garyY, line.text, 'speech', {
-            alpha, font: FONTS.sm, maxWidth: 180, offsetX: -30, offsetY: -35
+            alpha, font: FONTS.sm, maxWidth: IDLE_BUBBLES.garyDialogueMaxWidth, offsetX: IDLE_BUBBLES.garyDialogueXOffset, offsetY: IDLE_BUBBLES.garyDialogueYOffset
           })
         }
       }
@@ -997,18 +881,18 @@ export function useRenderer(deps: RendererDeps) {
     const currentAltitude = getHeightAtWorldDistance(world.boulderDistance)
 
     const skyGradient = ctx.createLinearGradient(0, 0, 0, height)
-    const altitudeRatio = Math.min(1, currentAltitude / 3000)
-    const r = Math.floor(15 + altitudeRatio * 25)
-    const g = Math.floor(10 + altitudeRatio * 20)
-    const b = Math.floor(40 + altitudeRatio * 50)
+    const altitudeRatio = Math.min(1, currentAltitude / SKY.altitudeScale)
+    const r = Math.floor(SKY.topR + altitudeRatio * SKY.topRBonus)
+    const g = Math.floor(SKY.topG + altitudeRatio * SKY.topGBonus)
+    const b = Math.floor(SKY.topB + altitudeRatio * SKY.topBBonus)
     skyGradient.addColorStop(0, `rgb(${r}, ${g}, ${b})`)
-    skyGradient.addColorStop(0.45, `rgb(${20 + altitudeRatio * 10}, ${15 + altitudeRatio * 10}, ${55 + altitudeRatio * 20})`)
+    skyGradient.addColorStop(SKY.midStop, `rgb(${SKY.midR + altitudeRatio * SKY.midRBonus}, ${SKY.midG + altitudeRatio * SKY.midGBonus}, ${SKY.midB + altitudeRatio * SKY.midBBonus})`)
     // Warm horizon band
-    const horizonR = Math.floor(40 + altitudeRatio * 30)
-    const horizonG = Math.floor(20 + altitudeRatio * 15)
-    const horizonB = Math.floor(45 + altitudeRatio * 10)
-    skyGradient.addColorStop(0.85, `rgb(${horizonR}, ${horizonG}, ${horizonB})`)
-    skyGradient.addColorStop(1, `rgb(${horizonR + 15}, ${horizonG + 10}, ${horizonB - 10})`)
+    const horizonR = Math.floor(SKY.horizonR + altitudeRatio * SKY.horizonRBonus)
+    const horizonG = Math.floor(SKY.horizonG + altitudeRatio * SKY.horizonGBonus)
+    const horizonB = Math.floor(SKY.horizonB + altitudeRatio * SKY.horizonBBonus)
+    skyGradient.addColorStop(SKY.horizonStop, `rgb(${horizonR}, ${horizonG}, ${horizonB})`)
+    skyGradient.addColorStop(1, `rgb(${horizonR + SKY.farOffsetR}, ${horizonG + SKY.farOffsetG}, ${horizonB + SKY.farOffsetB})`)
     ctx.fillStyle = skyGradient
     ctx.fillRect(0, 0, width, height)
 
@@ -1031,6 +915,7 @@ export function useRenderer(deps: RendererDeps) {
     characterRenderer.drawThoughtBubble(width, height)
     characterRenderer.drawFinalThought(width, height)
     drawIdleBubbles(width, height)
+    obstacleRenderer.drawLandmarkBubbles(width, height)
     characterRenderer.drawCountdown(width, height)
   }
 

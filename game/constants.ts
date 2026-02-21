@@ -58,6 +58,7 @@ export const COLORS = {
   // Trees
   trunkBrown: '#3d2817',
   pineGreen: '#1a3d1a',
+  pineHighlight: '#2a5a2a',
   oakGreen: '#2d4a2d',
   deadBranch: '#4a3a2a',
   grassGreen: '#3a5a3a',
@@ -86,6 +87,20 @@ export const COLORS = {
   ufoDome: '#88f',
   ufoLights: '#0f0',
   laserGreen: 'rgba(0, 255, 0, 0.7)',
+  laserImpactInner: 'rgba(0, 255, 0, 0.4)',
+  laserImpactOuter: 'rgba(0, 255, 0, 0)',
+  talonColor: '#ccc',
+  fallingRockFill: '#6a6a6a',
+
+  // Moon & sky
+  moonGradientInner: 'rgba(255, 255, 200, 0.3)',
+  moonGradientOuter: 'rgba(255, 255, 200, 0)',
+
+  // Campfire
+  campfireGlowInner: 'rgba(255, 150, 50, 0.15)',
+  campfireGlowOuter: 'rgba(255, 100, 0, 0)',
+  campfireFlames: ['#ff4500', '#ff6b00', '#ffaa00', '#ffcc00', '#ff8800'] as readonly string[],
+  smokeColor: 'rgba(200, 200, 200, 0.3)',
 
   // UI
   intensityGreen: '#4ade80',
@@ -154,8 +169,10 @@ export const TIMING = {
   rollSoundIntervalFast: 0.1,
 
   // Exclamations & dialogue
-  boulderExclamationDuration: 2,           // base; + random * 2
-  sisyphusExclamationDuration: 3,          // base; + random * 2
+  boulderExclamationDuration: 2,           // base; + random * boulderExclamationRandom
+  boulderExclamationRandom: 2,
+  sisyphusExclamationDuration: 3,          // base; + random * sisyphusExclamationRandom
+  sisyphusExclamationRandom: 2,
   prometheusExchangeDuration: 3.5,
   prometheusExchangePause: 0.5,            // gap between sequential exchanges
   thoughtDuration: 4,
@@ -193,8 +210,13 @@ export const TIMING = {
   autoTapInterval: 120,
 
   // Storm cloud
-  stormDuration: 4,
-  alienLaserDuration: 3.5,
+  stormArrivalDuration: 20,     // seconds for cloud to drift in from offscreen
+  stormActiveDuration: 30,      // seconds of rain + lightning
+  stormDepartDuration: 8,       // seconds for cloud to fly away offscreen
+  stormThoughtInterval: 7,      // seconds between storm thought bubbles
+  alienLaserDuration: 8,        // total duration (arrival + active + departure)
+  alienArrivalDuration: 2,      // seconds for UFO to fly in
+  alienDepartDuration: 2,       // seconds for UFO to fly away upward
   attackBirdsDuration: 3,
 
   // Flat idle harassment
@@ -257,6 +279,221 @@ export const PHYSICS = {
 
   // Return push (after continue, Sis pushes boulder back to start)
   returnPushSpeed: 120,                    // px/s — Sis pushes boulder back toward start
+
+  // Game loop thresholds
+  defaultCanvasWidth: 800,
+  rollingOverInitialVelocity: 80,
+  rollingOverTumbleOffsetScale: 70,
+  playerWorldDistanceOffset: 40,
+  progressPercentScale: 100,
+  frameRate: 60,
+  rollingBackScoreDivisor: 5,
+  rollingBackMinDistance: 100,
+  rollSoundVelocityThreshold: 5,
+  bodyOnScreenMargin: 50,
+  maxDeltaTime: 0.05,
+
+  // Delivery bird flight
+  deliveryBirdSpawnXOffset: 150,
+  deliveryBirdDropXOffset: 50,
+  deliveryBirdPositionThreshold: 15,
+  deliveryBirdDescentThreshold: 200,
+  deliveryBirdCarryDescentThreshold: 150,
+  deliveryBirdExitSpeedMultiplier: 1.5,
+  deliveryBirdExitScreenMargin: 200,
+
+  // Blood drops (delivery bird)
+  bloodDropGravity: 200,
+  bloodDropAlphaFadeRate: 0.4,
+  bloodDropSpawnRate: 8,
+  bloodDropXRange: 10,
+  bloodDropYOffset: 60,
+  bloodDropVelocityYMin: 20,
+  bloodDropVelocityYRange: 40,
+  bloodDropAlphaMin: 0.8,
+  bloodDropAlphaRange: 0.2,
+
+  // Rolling over
+  rollingOverTotalRollDistance: 500,
+  rollingOverHalfwayScale: 2,
+  sisyphusStopRunningChance: 0.02,
+  sisyphusTumbleRotationSpeed: 4,
+  sisyphusTumbleXAmplitude: 10,
+  rollingOverBoulderExclaimThreshold: 30,
+  rollingOverSisExclaimThreshold: 20,
+  rollingOverContinueVelocityThreshold: 5,
+
+  // Animation speeds
+  legAnimationSpeed: 8,
+  breathAnimationSpeed: 3,
+  birdFlapSpeed: 12,
+  birdBobbingSineFreq: 3,
+  birdBobbingPositionScale: 0.01,
+  birdBobbingYAmplitude: 20,
+  armPhaseDamping: 0.88,
+  thoughtFadeInRate: 3,
+  prometheusFadeInRate: 3,
+
+  // Bird spawning
+  birdSpawnEdgeOffset: 50,
+  birdSpawnXRange: 200,
+  birdSpawnYMin: 40,
+  birdSpawnYRange: 120,
+  birdVelocityXBase: 40,
+  birdVelocityXRange: 40,
+  birdVelocityYAmplitude: 15,
+  birdCullDistanceLeft: 100,
+
+  // Cloud reset
+  cloudResetXOffset: 100,
+  cloudResetXRange: 500,
+
+  // Spaceship Y
+  spaceshipYOscillation: 15,
+  spaceshipSpawnXOffset: 100,
+  spaceshipSpawnYMin: 60,
+  spaceshipSpawnYRange: 80,
+
+  // Idle bird (Lou) behavior
+  idleBirdSpawnXOffset: 80,
+  idleBirdSpawnY: 40,
+  idleBirdSwoopSpeed: 6,
+  idleBirdApproachDuration: 2.5,
+  idleBirdCirclePhaseDelay: 2.5,
+  idleBirdApproachYBase: 30,
+  idleBirdApproachYAmplitude: 10,
+  idleBirdCircleSineFreq: 0.7,
+  idleBirdCirclePhaseSpeed: 2.5,
+  idleBirdCircleYBase: 20,
+  idleBirdCircleYSineSpeed: 2.5,
+  idleBirdDiveAmplitude: 30,
+  idleBirdDiveFreq: 5,
+  idleBirdDiveMaxAmplitude: 40,
+  idleBirdCullDistance: 200,
+
+  // Gary bird behavior
+  garyBirdSpawnXOffset: 80,
+  garyBirdSpawnY: 40,
+  garyThoughtAnimationSpeed: 6,
+  garyCullDistance: 200,
+  garyLandingDistanceThreshold: 5,
+  garyLandingPositionThreshold: 5,
+
+  // Bounce animation
+  bounceSineFrequency: 3,
+} as const
+
+// ── Input ────────────────────────────────────────────────────────────
+export const INPUT = {
+  tapIntensity: 100,
+  tapArmPhase: Math.PI * 0.4,
+} as const
+
+// ── Level Transition ────────────────────────────────────────────────
+export const LEVEL_TRANSITION_ZONE = 30
+
+// ── Spawning Ranges ──────────────────────────────────────────────────
+export const SPAWNING = {
+  // Clouds
+  cloudMaxXSpawn: 2000,
+  cloudYMin: 40, cloudYRange: 100,
+  cloudSpeedMin: 8, cloudSpeedRange: 15,
+  cloudSizeMin: 25, cloudSizeRange: 35,
+
+  // Trees
+  treeSizeMin: 120, treeSizeRange: 180,
+  treePineThreshold: 0.7,
+  treeOakThreshold: 0.5,
+  treeForegroundThreshold: 0.3,
+
+  // Grass
+  grassHeightMin: 5, grassHeightRange: 10,
+  grassBladesMin: 3, grassBladesRange: 4,
+
+  // Initial state values
+  strayDogBarkTimerMin: 2, strayDogBarkTimerRange: 3,
+  sasquatchInitialPeek: 0.8,
+  goatBlinkTimerMin: 3, goatBlinkTimerRange: 4,
+  creditsInitialY: 600,
+  initialWorldDistanceOffset: 40,
+  scorePerDistance: 5,
+  autoPlayStartDelay: 1000,
+
+  // Bird spawning (used in index.vue)
+  initialBirdSpawnCount: 4,
+} as const
+
+// ── Obstacle Update Constants ────────────────────────────────────────
+export const OBSTACLE_BEHAVIOR = {
+  // Stray dog
+  strayDogDefaultProximity: 200,
+
+  // Smoke particles (campfire)
+  smokeSpawnRateMultiplier: 3,
+  smokeXOffsetRange: 8,
+  smokeVyMin: -15, smokeVyRange: -10,
+  smokeAlphaMin: 0.4, smokeAlphaRange: 0.2,
+  smokeSizeMin: 2, smokeSizeRange: 3,
+  smokeDriftRange: 10,
+  smokeAlphaDecayRate: 0.3,
+  smokeSizeGrowthRate: 2,
+
+  // Sasquatch
+  sasquatchDefaultProximity: 250,
+  sasquatchHideSpeed: 2,
+  sasquatchPeekDistanceThreshold: 100,
+  sasquatchPeekSpeed: 0.5,
+
+  // Attack birds
+  attackBirdCount: 6,
+  attackBirdVxMagnitude: 80,
+  attackBirdVyMagnitude: 60,
+  attackBirdVyDownOffset: 20,
+  attackBirdPhaseStagger: 0.5,
+  attackBirdAnimSpeed: 12,
+
+  // Storm cloud
+  raindropSpawnRateMultiplier: 30,
+  raindropXOffsetRange: 120,
+  raindropSpawnY: -80,
+  raindropSpeedMin: 200, raindropSpeedRange: 100,
+  raindropGroundY: 10,
+  lightningFlashIntensity: 0.3,
+  lightningIntervalMin: 1, lightningIntervalRange: 2,
+  lightningFadeSpeed: 2,
+  stormDefaultProximity: 150,
+  stormCloudHoverHeight: 300,   // px above Sisyphus head
+  stormCloudSpawnOffsetX: 600,  // how far offscreen the cloud starts
+  stormCloudDepartSpeedX: 120,  // px/s horizontal departure speed
+  stormCloudDepartSpeedY: 30,   // px/s upward departure speed
+
+  // Alien laser
+  alienDefaultProximity: 200,
+  ufoDefaultY: 80,
+  ufoBobAmplitude: 10,
+  ufoBobSpeed: 2,
+  laserAngleSpeed: 1.5,
+  laserActiveStart: 2,         // start laser after arrival phase
+  laserActiveEnd: 6,           // stop laser before departure
+  ufoSpawnOffsetX: 500,       // how far offscreen UFO starts
+  ufoDepartSpeedX: 150,       // px/s horizontal departure speed
+  ufoDepartSpeedY: 80,        // px/s upward departure speed
+
+  // Avalanche
+  rockSpawnRate: 2,
+  rockXOffsetRange: 60,
+  rockSpawnYMin: -40, rockSpawnYRange: -20,
+  rockVyMin: 30, rockVyRange: 40,
+  rockSizeMin: 2, rockSizeRange: 4,
+  rockGravity: 80,
+  rockRotationSpeed: 3,
+  rockGroundY: 10,
+
+  // Muses
+  musesLaughSpeed: 4,
+
+  // Philosopher
+  philosopherThoughtPositions: 4,
 } as const
 
 // ── Environment Spawning ────────────────────────────────────────────

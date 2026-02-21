@@ -3,7 +3,7 @@ import type { GameState } from './useGameState'
 import type { Obstacle } from './useGameState'
 import { PEAK_DISTANCE, PLAYER_SCREEN_X_RATIO, CONSTANT_SPEED, METER_DRAIN_RATES, LEVEL_DISTANCES, FLAT_START } from './usePhysics'
 import { createObstacleUpdater } from './useGameLoop-obstacles'
-import { TIMING, PHYSICS, ENVIRONMENT, TUMBLE_OFFSET_X, BOULDER_RADIUS } from '~/game/constants'
+import { TIMING, PHYSICS, ENVIRONMENT, TUMBLE_OFFSET_X, BOULDER_RADIUS, SPAWNING, OBSTACLE_BEHAVIOR } from '~/game/constants'
 import { louGaryDialogue, garyExitThought } from '~/game/content'
 import dialogue from '~/game.dialogue.json'
 
@@ -130,7 +130,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
   /** Update camera scroll position based on boulder position */
   function updateScroll(): void {
-    const screenWidth = gameCanvas.value?.width || 800
+    const screenWidth = gameCanvas.value?.width || PHYSICS.defaultCanvasWidth
     world.worldScrollX = world.boulderDistance - (screenWidth * PLAYER_SCREEN_X_RATIO)
   }
 
@@ -147,10 +147,10 @@ export function useGameLoop(deps: GameLoopDeps) {
     const canvas = gameCanvas.value
     if (!canvas) return
     world.birds.push({
-      x: canvas.width + 50 + Math.random() * 200,
-      y: 40 + Math.random() * 120,
-      vx: -40 - Math.random() * 40,
-      vy: Math.sin(Math.random() * Math.PI * 2) * 15,
+      x: canvas.width + PHYSICS.birdSpawnEdgeOffset + Math.random() * PHYSICS.birdSpawnXRange,
+      y: PHYSICS.birdSpawnYMin + Math.random() * PHYSICS.birdSpawnYRange,
+      vx: -PHYSICS.birdVelocityXBase - Math.random() * PHYSICS.birdVelocityXRange,
+      vy: Math.sin(Math.random() * Math.PI * 2) * PHYSICS.birdVelocityYAmplitude,
       flapPhase: Math.random() * Math.PI * 2
     })
   }
@@ -160,8 +160,8 @@ export function useGameLoop(deps: GameLoopDeps) {
     if (!canvas) return
     const playerScreenX = world.worldDistance - world.worldScrollX
     world.idleBird = {
-      x: canvas.width + 80,
-      y: 40,
+      x: canvas.width + PHYSICS.idleBirdSpawnXOffset,
+      y: PHYSICS.idleBirdSpawnY,
       phase: 0,
       swoopPhase: 0,
       targetX: playerScreenX,
@@ -176,8 +176,8 @@ export function useGameLoop(deps: GameLoopDeps) {
     if (!canvas) return
     const playerScreenX = world.worldDistance - world.worldScrollX
     world.garyBird = {
-      x: -80,        // flies in from left
-      y: 40,
+      x: -PHYSICS.garyBirdSpawnXOffset,        // flies in from left
+      y: PHYSICS.garyBirdSpawnY,
       phase: 0,
       landed: false,
       flyingAway: false,
@@ -260,7 +260,7 @@ export function useGameLoop(deps: GameLoopDeps) {
     }
 
     if (!world.prometheusActiveExchange) return
-    world.prometheusActiveExchange.fadeIn = Math.min(1, world.prometheusActiveExchange.fadeIn + dt * 3)
+    world.prometheusActiveExchange.fadeIn = Math.min(1, world.prometheusActiveExchange.fadeIn + dt * PHYSICS.prometheusFadeInRate)
     world.prometheusActiveExchange.timer -= dt
     if (world.prometheusActiveExchange.timer <= 0) {
       world.prometheusActiveExchange = null
@@ -275,8 +275,8 @@ export function useGameLoop(deps: GameLoopDeps) {
   function maybeSpawnEvents() {
     if (!world.spaceshipActive && world.worldDistance > ENVIRONMENT.spaceshipMinDistance && Math.random() < ENVIRONMENT.spaceshipSpawnChance) {
       world.spaceshipActive = true
-      world.spaceshipX = -100
-      world.spaceshipY = 60 + Math.random() * 80
+      world.spaceshipX = -PHYSICS.spaceshipSpawnXOffset
+      world.spaceshipY = PHYSICS.spaceshipSpawnYMin + Math.random() * PHYSICS.spaceshipSpawnYRange
       world.spaceshipTimer = 0
     }
     if (world.birds.length < ENVIRONMENT.maxBirds && Math.random() < ENVIRONMENT.birdSpawnChance) {
@@ -298,10 +298,10 @@ export function useGameLoop(deps: GameLoopDeps) {
   function startRollingOver() {
     gameState.value = 'rolling_over'
     world.reachedPeak = true
-    world.boulderVelocity = 80
+    world.boulderVelocity = PHYSICS.rollingOverInitialVelocity
     finalScore.value = score.value
     world.sisyphusTumbleRotation = 0
-    world.sisyphusTumbleX = -70 * world.pushDir
+    world.sisyphusTumbleX = -PHYSICS.rollingOverTumbleOffsetScale * world.pushDir
     world.sisyphusFallen = false
     world.sisyphusRunning = true
     triggerBoulderExclamation()
@@ -365,7 +365,7 @@ export function useGameLoop(deps: GameLoopDeps) {
     // Constant speed movement (on flat terrain, only move if player is actively pushing)
     if (!onFlat || intensity.value > 0) {
       world.boulderDistance += CONSTANT_SPEED * dt * pd
-      world.worldDistance = world.boulderDistance - 40 * pd
+      world.worldDistance = world.boulderDistance - PHYSICS.playerWorldDistanceOffset * pd
       score.value += CONSTANT_SPEED * dt * PHYSICS.scoreMultiplier
       displayScore.value = score.value
       updateScroll()
@@ -387,7 +387,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       return
     }
 
-    progressPercent.value = Math.min(100, Math.max(0, (effectiveDist() / PEAK_DISTANCE) * 100))
+    progressPercent.value = Math.min(PHYSICS.progressPercentScale, Math.max(0, (effectiveDist() / PEAK_DISTANCE) * PHYSICS.progressPercentScale))
 
     checkPrometheusDialogue()
     checkLevelPhrase()
@@ -416,7 +416,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     if (world.crushTime > TIMING.crushToRollbackDelay) {
       gameState.value = 'rolling_back'
-      world.boulderVelocity = 80
+      world.boulderVelocity = PHYSICS.rollingOverInitialVelocity
       triggerBoulderExclamation()
     }
   }
@@ -437,7 +437,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     if (onFlat || pastBottom) {
       // Gradual friction deceleration on flat terrain and beyond
-      world.boulderVelocity *= Math.pow(PHYSICS.rollbackFlatFriction, dt * 60)
+      world.boulderVelocity *= Math.pow(PHYSICS.rollbackFlatFriction, dt * PHYSICS.frameRate)
     } else {
       // Accelerate downhill
       world.boulderVelocity += PHYSICS.rollbackAcceleration * dt
@@ -447,19 +447,19 @@ export function useGameLoop(deps: GameLoopDeps) {
     // No clampToBottom — boulder is free to roll past the world edge
 
     const currentEDist = Math.max(0, effectiveDist())
-    const startDist = finalScore.value / 5
-    const scoreRatio = currentEDist / Math.max(startDist, 100)
+    const startDist = finalScore.value / PHYSICS.rollingBackScoreDivisor
+    const scoreRatio = currentEDist / Math.max(startDist, PHYSICS.rollingBackMinDistance)
     displayScore.value = Math.max(0, Math.floor(finalScore.value * scoreRatio))
 
     displayLevel.value = getLevelAtDistance(currentEDist)
-    progressPercent.value = Math.min(100, Math.max(0, (currentEDist / PEAK_DISTANCE) * 100))
+    progressPercent.value = Math.min(PHYSICS.progressPercentScale, Math.max(0, (currentEDist / PEAK_DISTANCE) * PHYSICS.progressPercentScale))
 
     // Freeze camera once boulder passes the world edge — let boulder roll across screen
     if (!pastBottom) {
       updateScroll()
     }
 
-    if (world.gameTime - world.lastRollSoundTime > TIMING.rollSoundInterval && world.boulderVelocity > 5) {
+    if (world.gameTime - world.lastRollSoundTime > TIMING.rollSoundInterval && world.boulderVelocity > PHYSICS.rollSoundVelocityThreshold) {
       play8BitSound('roll')
       world.lastRollSoundTime = world.gameTime
     }
@@ -473,13 +473,13 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     // Check if boulder reached near screen edge or slowed to a stop
     const canvas = gameCanvas.value
-    const screenWidth = canvas?.width || 800
+    const screenWidth = canvas?.width || PHYSICS.defaultCanvasWidth
     const boulderScreenX = world.boulderDistance - world.worldScrollX
     const nearEdge = pd > 0
       ? boulderScreenX < PHYSICS.rollbackScreenEdgeMargin
       : boulderScreenX > screenWidth - PHYSICS.rollbackScreenEdgeMargin
 
-    if ((onFlat || pastBottom) && (world.boulderVelocity < 5 || nearEdge)) {
+    if ((onFlat || pastBottom) && (world.boulderVelocity < PHYSICS.rollbackStopVelocity || nearEdge)) {
       world.boulderVelocity = 0
       displayScore.value = 0
       spawnDeliveryBird()
@@ -492,11 +492,11 @@ export function useGameLoop(deps: GameLoopDeps) {
     const pd = world.pushDir
     const bird = world.deliveryBird
     const crushScreenX = world.sisyphusCrushWorldX - world.worldScrollX
-    const bodyOnScreen = crushScreenX > -50 && crushScreenX < canvas.width + 50
+    const bodyOnScreen = crushScreenX > -PHYSICS.bodyOnScreenMargin && crushScreenX < canvas.width + PHYSICS.bodyOnScreenMargin
 
     bird.active = true
     bird.pickupX = world.sisyphusCrushWorldX
-    bird.dropX = world.boulderDistance + 50 * pd
+    bird.dropX = world.boulderDistance + PHYSICS.deliveryBirdDropXOffset * pd
     bird.bodyPickedUp = false
     bird.dropComplete = false
     bird.grabTimer = 0
@@ -505,13 +505,13 @@ export function useGameLoop(deps: GameLoopDeps) {
     if (bodyOnScreen) {
       // Fly to the existing body on screen
       bird.phase = 'fetch'
-      bird.x = (pd > 0 ? canvas.width + 150 : -150) + world.worldScrollX
+      bird.x = (pd > 0 ? canvas.width + PHYSICS.deliveryBirdSpawnXOffset : -PHYSICS.deliveryBirdSpawnXOffset) + world.worldScrollX
       bird.y = PHYSICS.deliveryBirdCruiseAltitude
     } else {
       // Body is off-screen — fly in already carrying it
       bird.phase = 'carry'
       bird.bodyPickedUp = true
-      bird.x = (pd > 0 ? canvas.width + 150 : -150) + world.worldScrollX
+      bird.x = (pd > 0 ? canvas.width + PHYSICS.deliveryBirdSpawnXOffset : -PHYSICS.deliveryBirdSpawnXOffset) + world.worldScrollX
       bird.y = PHYSICS.deliveryBirdCruiseAltitude
     }
   }
@@ -525,28 +525,28 @@ export function useGameLoop(deps: GameLoopDeps) {
     // Update blood drops
     bird.bloodDrops = bird.bloodDrops.filter(drop => {
       drop.y += drop.vy * dt
-      drop.vy += 200 * dt  // gravity
-      drop.alpha -= 0.4 * dt
+      drop.vy += PHYSICS.bloodDropGravity * dt
+      drop.alpha -= PHYSICS.bloodDropAlphaFadeRate * dt
       return drop.alpha > 0
     })
 
     // Spawn new blood drops while carrying
-    if ((bird.phase === 'carry' || bird.phase === 'fetch') && bird.bodyPickedUp && Math.random() < 8 * dt) {
+    if ((bird.phase === 'carry' || bird.phase === 'fetch') && bird.bodyPickedUp && Math.random() < PHYSICS.bloodDropSpawnRate * dt) {
       bird.bloodDrops.push({
-        x: bird.x + (Math.random() - 0.5) * 10,
-        y: bird.y + 60,   // below the carried body
-        vy: 20 + Math.random() * 40,
-        alpha: 0.8 + Math.random() * 0.2,
+        x: bird.x + (Math.random() - 0.5) * PHYSICS.bloodDropXRange,
+        y: bird.y + PHYSICS.bloodDropYOffset,
+        vy: PHYSICS.bloodDropVelocityYMin + Math.random() * PHYSICS.bloodDropVelocityYRange,
+        alpha: PHYSICS.bloodDropAlphaMin + Math.random() * PHYSICS.bloodDropAlphaRange,
       })
     }
 
     if (bird.phase === 'fetch') {
       // Fly toward the crush body position
       const dx = bird.pickupX - bird.x
-      if (Math.abs(dx) > 15) {
+      if (Math.abs(dx) > PHYSICS.deliveryBirdPositionThreshold) {
         bird.x += Math.sign(dx) * speed * dt
         // Descend as we approach
-        const targetY = Math.abs(dx) < 200 ? -PHYSICS.deliveryBirdDropHeight : PHYSICS.deliveryBirdCruiseAltitude
+        const targetY = Math.abs(dx) < PHYSICS.deliveryBirdDescentThreshold ? -PHYSICS.deliveryBirdDropHeight : PHYSICS.deliveryBirdCruiseAltitude
         bird.y += (targetY - bird.y) * 2 * dt
       } else {
         bird.phase = 'grab'
@@ -556,17 +556,17 @@ export function useGameLoop(deps: GameLoopDeps) {
     } else if (bird.phase === 'grab') {
       // Brief pause to "pick up" the body
       bird.grabTimer += dt
-      if (bird.grabTimer > 0.4) {
+      if (bird.grabTimer > PHYSICS.deliveryBirdGrabPause) {
         bird.bodyPickedUp = true  // hides the crushed body from rolling_back renderer
         bird.phase = 'carry'
       }
     } else if (bird.phase === 'carry') {
       // Fly toward drop point near boulder
       const dx = bird.dropX - bird.x
-      if (Math.abs(dx) > 15) {
+      if (Math.abs(dx) > PHYSICS.deliveryBirdPositionThreshold) {
         bird.x += Math.sign(dx) * speed * dt
         // Cruise high, descend near target
-        const targetY = Math.abs(dx) < 150 ? -PHYSICS.deliveryBirdDropHeight : PHYSICS.deliveryBirdCruiseAltitude
+        const targetY = Math.abs(dx) < PHYSICS.deliveryBirdCarryDescentThreshold ? -PHYSICS.deliveryBirdDropHeight : PHYSICS.deliveryBirdCruiseAltitude
         bird.y += (targetY - bird.y) * 2 * dt
       } else {
         bird.phase = 'drop'
@@ -577,11 +577,11 @@ export function useGameLoop(deps: GameLoopDeps) {
     } else if (bird.phase === 'exit') {
       // Fly away off-screen — climb and exit
       const exitDir = world.pushDir > 0 ? -1 : 1
-      bird.x += exitDir * speed * 1.5 * dt
+      bird.x += exitDir * speed * PHYSICS.deliveryBirdExitSpeedMultiplier * dt
       bird.y += (PHYSICS.deliveryBirdCruiseAltitude - bird.y) * 2 * dt
 
       const screenX = bird.x - world.worldScrollX
-      if (screenX < -200 || screenX > (canvas.width || 800) + 200) {
+      if (screenX < -PHYSICS.deliveryBirdExitScreenMargin || screenX > (canvas.width || PHYSICS.defaultCanvasWidth) + PHYSICS.deliveryBirdExitScreenMargin) {
         bird.active = false
         bird.dropComplete = false  // hand off to continue_prompt's own body renderer
         continueFromPeak.value = false
@@ -609,18 +609,18 @@ export function useGameLoop(deps: GameLoopDeps) {
     }
 
     world.boulderDistance += world.boulderVelocity * dt * pd
-    world.boulderBounce = Math.abs(Math.sin(world.boulderRotation * 3)) * Math.min(PHYSICS.maxBounceAmplitude, world.boulderVelocity * PHYSICS.bounceVelocityScale)
+    world.boulderBounce = Math.abs(Math.sin(world.boulderRotation * PHYSICS.bounceSineFrequency)) * Math.min(PHYSICS.maxBounceAmplitude, world.boulderVelocity * PHYSICS.bounceVelocityScale)
 
-    const totalRollDistance = PEAK_DISTANCE + 500
+    const totalRollDistance = PEAK_DISTANCE + PHYSICS.rollingOverTotalRollDistance
     const scoreRatio = Math.max(0, 1 - (distFromPeak / totalRollDistance))
     displayScore.value = Math.floor(finalScore.value * scoreRatio)
 
     const effectiveDistance = Math.max(0, PEAK_DISTANCE - distFromPeak)
     displayLevel.value = getLevelAtDistance(effectiveDistance)
-    progressPercent.value = Math.min(100, Math.max(0, (effectiveDistance / PEAK_DISTANCE) * 100))
+    progressPercent.value = Math.min(PHYSICS.progressPercentScale, Math.max(0, (effectiveDistance / PEAK_DISTANCE) * PHYSICS.progressPercentScale))
     updateScroll()
 
-    if (world.gameTime - world.lastRollSoundTime > TIMING.rollSoundIntervalFast && world.boulderVelocity > 5) {
+    if (world.gameTime - world.lastRollSoundTime > TIMING.rollSoundIntervalFast && world.boulderVelocity > PHYSICS.rollSoundVelocityThreshold) {
       play8BitSound('roll')
       world.lastRollSoundTime = world.gameTime
     }
@@ -629,27 +629,27 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     if (world.sisyphusRunning) {
       world.sisyphusTumbleX = -TUMBLE_OFFSET_X * pd
-      const halfwayDown = PEAK_DISTANCE / 2
-      if (distFromPeak > halfwayDown && Math.random() < 0.02) {
+      const halfwayDown = PEAK_DISTANCE / PHYSICS.rollingOverHalfwayScale
+      if (distFromPeak > halfwayDown && Math.random() < PHYSICS.sisyphusStopRunningChance) {
         world.sisyphusRunning = false
         triggerSisyphusExclamation()
       }
     } else if (!world.sisyphusFallen) {
-      world.sisyphusTumbleRotation += Math.PI * 4 * dt  // 2 rotations per second
-      world.sisyphusTumbleX = -TUMBLE_OFFSET_X * pd - Math.sin(world.sisyphusTumbleRotation) * 10 * pd
+      world.sisyphusTumbleRotation += Math.PI * PHYSICS.sisyphusTumbleRotationSpeed * dt
+      world.sisyphusTumbleX = -TUMBLE_OFFSET_X * pd - Math.sin(world.sisyphusTumbleRotation) * PHYSICS.sisyphusTumbleXAmplitude * pd
     }
 
     world.boulderExclamationTimer -= dt
     world.sisyphusExclamationTimer -= dt
 
-    if (world.boulderExclamationTimer <= 0 && world.boulderVelocity > 30) {
+    if (world.boulderExclamationTimer <= 0 && world.boulderVelocity > PHYSICS.rollingOverBoulderExclaimThreshold) {
       triggerBoulderExclamation()
     }
-    if (world.sisyphusExclamationTimer <= 0 && world.boulderVelocity > 20 && !world.sisyphusRunning) {
+    if (world.sisyphusExclamationTimer <= 0 && world.boulderVelocity > PHYSICS.rollingOverSisExclaimThreshold && !world.sisyphusRunning) {
       triggerSisyphusExclamation()
     }
 
-    if (distFromPeak > PEAK_DISTANCE && world.boulderVelocity < 5) {
+    if (distFromPeak > PEAK_DISTANCE && world.boulderVelocity < PHYSICS.rollingOverContinueVelocityThreshold) {
       displayScore.value = 0
       continueFromPeak.value = true
       continueTimer.value = TIMING.continueTimerDuration
@@ -711,10 +711,10 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     // Push boulder toward start position
     world.boulderDistance += PHYSICS.returnPushSpeed * dt * pd
-    world.worldDistance = world.boulderDistance - 40 * pd
+    world.worldDistance = world.boulderDistance - PHYSICS.playerWorldDistanceOffset * pd
 
     // Animate walking
-    world.legPhase += dt * 8
+    world.legPhase += dt * PHYSICS.legAnimationSpeed
     world.boulderRotation += dt * (PHYSICS.returnPushSpeed / BOULDER_RADIUS) * pd
 
     // Update camera — but once we reach start, freeze
@@ -724,7 +724,7 @@ export function useGameLoop(deps: GameLoopDeps) {
 
     if (reached) {
       world.boulderDistance = bottom
-      world.worldDistance = bottom - 40 * pd
+      world.worldDistance = bottom - PHYSICS.playerWorldDistanceOffset * pd
       updateScroll()
       world.lastTapTime = Date.now()
       startCountdown()
@@ -737,7 +737,7 @@ export function useGameLoop(deps: GameLoopDeps) {
     world.finalThoughtTimer += dt
     if (world.finalThoughtTimer > TIMING.finalThoughtDuration) {
       gameState.value = 'credits'
-      creditsY.value = 500
+      creditsY.value = SPAWNING.creditsInitialY
     }
   }
 
@@ -750,14 +750,14 @@ export function useGameLoop(deps: GameLoopDeps) {
 
   function updateAnimations(dt: number) {
     world.gameTime += dt
-    world.breathPhase += dt * 3
+    world.breathPhase += dt * PHYSICS.breathAnimationSpeed
 
     // Animate legs/sounds only when actually moving (not idle on flat)
     const isMoving = gameState.value === 'returning' || (gameState.value === 'playing' && (effectiveDist() >= FLAT_START || intensity.value > 0))
     world.isIdle = gameState.value === 'playing' && !isMoving
     if (isMoving) {
-      world.legPhase += dt * 8
-      world.boulderRotation += dt * (CONSTANT_SPEED / 26) * world.pushDir
+      world.legPhase += dt * PHYSICS.legAnimationSpeed
+      world.boulderRotation += dt * (CONSTANT_SPEED / BOULDER_RADIUS) * world.pushDir
       if (world.gameTime - world.lastFootstepTime > TIMING.footstepInterval) {
         play8BitSound('footstep')
         world.lastFootstepTime = world.gameTime
@@ -768,7 +768,7 @@ export function useGameLoop(deps: GameLoopDeps) {
       }
     }
 
-    world.armPhase *= 0.88
+    world.armPhase *= PHYSICS.armPhaseDamping
 
     // Decrement boulder exclamation timer during playing (for idle harassment thoughts)
     if (gameState.value === 'playing' && world.boulderExclamationTimer > 0) {
@@ -778,7 +778,7 @@ export function useGameLoop(deps: GameLoopDeps) {
     updatePrometheusExchange(dt)
 
     if (world.currentThought && gameState.value === 'playing') {
-      world.currentThought.fadeIn = Math.min(1, world.currentThought.fadeIn + dt * 3)
+      world.currentThought.fadeIn = Math.min(1, world.currentThought.fadeIn + dt * PHYSICS.thoughtFadeInRate)
       world.currentThought.timer -= dt
       if (world.currentThought.timer <= 0) world.currentThought = null
     }
@@ -792,22 +792,22 @@ export function useGameLoop(deps: GameLoopDeps) {
   function updateEnvironment(dt: number) {
     world.clouds.forEach(cloud => {
       cloud.x -= cloud.speed * dt
-      if (cloud.x < -100) cloud.x = 2000 + Math.random() * 500
+      if (cloud.x < -PHYSICS.cloudResetXOffset) cloud.x = SPAWNING.cloudMaxXSpawn + Math.random() * PHYSICS.cloudResetXRange
     })
 
     world.birds = world.birds.filter(bird => {
       bird.x += bird.vx * dt
       bird.y += bird.vy * dt
-      bird.vy += Math.sin(world.gameTime * 3 + bird.x * 0.01) * 20 * dt
-      bird.flapPhase += dt * 12
-      return bird.x > -100
+      bird.vy += Math.sin(world.gameTime * PHYSICS.birdBobbingSineFreq + bird.x * PHYSICS.birdBobbingPositionScale) * PHYSICS.birdBobbingYAmplitude * dt
+      bird.flapPhase += dt * PHYSICS.birdFlapSpeed
+      return bird.x > -PHYSICS.birdCullDistanceLeft
     })
 
     if (world.spaceshipActive) {
       world.spaceshipTimer += dt
       world.spaceshipX += PHYSICS.spaceshipSpeed * dt
-      world.spaceshipY += Math.sin(world.spaceshipTimer * 2) * 15 * dt
-      if (world.spaceshipX > (gameCanvas.value?.width || 1000) + 100) {
+      world.spaceshipY += Math.sin(world.spaceshipTimer * OBSTACLE_BEHAVIOR.ufoBobSpeed) * PHYSICS.spaceshipYOscillation * dt
+      if (world.spaceshipX > (gameCanvas.value?.width || PHYSICS.defaultCanvasWidth) + PHYSICS.spaceshipSpawnXOffset) {
         world.spaceshipActive = false
       }
     }
@@ -822,28 +822,28 @@ export function useGameLoop(deps: GameLoopDeps) {
         // Lou flies away — up and to the right, leisurely
         bird.x += PHYSICS.louFlyAwaySpeedX * dt
         bird.y += PHYSICS.louFlyAwaySpeedY * dt
-        bird.swoopPhase += dt * 6
-        if (bird.x > (canvas?.width || 800) + 200) {
+        bird.swoopPhase += dt * PHYSICS.idleBirdSwoopSpeed
+        if (bird.x > (canvas?.width || PHYSICS.defaultCanvasWidth) + PHYSICS.idleBirdCullDistance) {
           world.idleBird = null
         }
       } else {
         bird.phase += dt
-        bird.swoopPhase += dt * 2.5
+        bird.swoopPhase += dt * PHYSICS.idleBirdCirclePhaseSpeed
 
-        if (bird.phase < 2.5) {
+        if (bird.phase < PHYSICS.idleBirdApproachDuration) {
           // Approach: fly from right toward player
           bird.x += (playerScreenX - bird.x) * PHYSICS.louApproachRate * dt
-          bird.y = 30 + Math.sin(bird.swoopPhase) * 10
+          bird.y = PHYSICS.idleBirdApproachYBase + Math.sin(bird.swoopPhase) * PHYSICS.idleBirdApproachYAmplitude
         } else {
           // Circle and dive-bomb around player's head
-          const circleTime = bird.phase - 2.5
-          const radius = 60 + Math.sin(circleTime * 0.7) * 25
-          bird.x = playerScreenX + Math.cos(circleTime * 2.5) * radius
-          bird.y = 20 + Math.sin(circleTime * 2.5) * 30 + Math.max(0, Math.sin(circleTime * 5)) * 40
+          const circleTime = bird.phase - PHYSICS.idleBirdCirclePhaseDelay
+          const radius = PHYSICS.louCircleBaseRadius + Math.sin(circleTime * PHYSICS.idleBirdCircleSineFreq) * PHYSICS.louCircleRadiusVariance
+          bird.x = playerScreenX + Math.cos(circleTime * PHYSICS.idleBirdCirclePhaseSpeed) * radius
+          bird.y = PHYSICS.idleBirdCircleYBase + Math.sin(circleTime * PHYSICS.idleBirdCircleYSineSpeed) * PHYSICS.idleBirdDiveAmplitude + Math.max(0, Math.sin(circleTime * PHYSICS.idleBirdDiveFreq)) * PHYSICS.idleBirdDiveMaxAmplitude
 
           // Sisyphus swats periodically
-          if (Math.sin(circleTime * 2.5) > 0.8 && world.swatPhase <= 0) {
-            world.swatPhase = 0.4  // swat animation duration
+          if (Math.sin(circleTime * PHYSICS.idleBirdCirclePhaseSpeed) > PHYSICS.louSwoopTrigger && world.swatPhase <= 0) {
+            world.swatPhase = PHYSICS.swatDuration
           }
         }
 
@@ -871,9 +871,9 @@ export function useGameLoop(deps: GameLoopDeps) {
         gary.x -= PHYSICS.garyFlyAwaySpeedX * dt
         gary.y += PHYSICS.garyFlyAwaySpeedY * dt
         gary.landed = false
-        gary.phase += dt * 6
+        gary.phase += dt * PHYSICS.garyThoughtAnimationSpeed
         if (gary.thoughtTimer > 0) gary.thoughtTimer -= dt
-        if (gary.x < -200) {
+        if (gary.x < -PHYSICS.garyCullDistance) {
           world.garyBird = null
         }
       } else if (!gary.landed) {
@@ -882,7 +882,7 @@ export function useGameLoop(deps: GameLoopDeps) {
         const landingX = playerScreenX - PHYSICS.garyLandingOffset
         gary.x += (landingX - gary.x) * PHYSICS.garyApproachRate * dt
         gary.y += (0 - gary.y) * PHYSICS.garyApproachRate * dt
-        if (Math.abs(gary.x - landingX) < 5 && gary.phase > PHYSICS.garyLandingPhaseMin) {
+        if (Math.abs(gary.x - landingX) < PHYSICS.garyLandingDistanceThreshold && gary.phase > PHYSICS.garyLandingPhaseMin) {
           gary.landed = true
           gary.x = landingX
           gary.y = 0
@@ -946,7 +946,7 @@ export function useGameLoop(deps: GameLoopDeps) {
     if (!canvas) return
 
     const now = performance.now()
-    const dt = Math.min((now - world.lastFrameTime) / 1000, 0.05)
+    const dt = Math.min((now - world.lastFrameTime) / 1000, PHYSICS.maxDeltaTime)
     world.lastFrameTime = now
 
     // Auto-play
