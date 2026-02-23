@@ -59,6 +59,10 @@ export const louGaryDialogue = [
 
 export const garyExitThought = "I'd stop hanging out with that guy if he didn't have such good worms"
 
+// Attack birds dialogue
+export const attackBirdsSisExclamation = 'Leave me alone, you dastardly villains!'
+export const attackBirdsBoulderThought = "I'm going to need a bath after this journey"
+
 export const castList = [
   { role: 'Sisyphus', actor: 'Stick Figure' },
   { role: 'The Boulder', actor: 'Stick Circle' },

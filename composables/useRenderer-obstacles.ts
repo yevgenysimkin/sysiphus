@@ -1,7 +1,7 @@
 import type { Ref } from 'vue'
 import type { Obstacle } from './useGameState'
 import { drawAncientRuins as drawAncientRuinsStandalone } from './useRenderer-ruins'
-import { philosopherThoughts, stormThoughts } from '~/game/content'
+import { philosopherThoughts, stormThoughts, attackBirdsSisExclamation, attackBirdsBoulderThought } from '~/game/content'
 import {
   COLORS, FONTS, DEFAULT_CULL_MARGIN, STRAY_DOG_CULL_MARGIN,
   TIMING, OBSTACLE_BEHAVIOR,
@@ -18,6 +18,7 @@ interface ObstacleRendererDeps {
   world: {
     worldScrollX: number
     gameTime: number
+    boulderDistance: number
     obstacles: Obstacle[]
   }
   hillY: (screenX: number, height: number) => number
@@ -627,7 +628,41 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
             ctx.lineTo(bx + ATTACK_BIRDS_RENDER.wingXMax, by + flapY)
             ctx.stroke()
           }
-          // Angry squawks drawn in drawLandmarkBubbles for top Z-order
+          // Droppings
+          if (s.attackBirdDroppings) {
+            for (const drop of s.attackBirdDroppings) {
+              const dx = screenX + drop.x
+              const dy = groundY + drop.y
+              if (!drop.landed) {
+                // Falling dropping — white ellipse
+                ctx.fillStyle = '#eee'
+                ctx.beginPath()
+                ctx.ellipse(dx, dy, ATTACK_BIRDS_RENDER.droppingW, ATTACK_BIRDS_RENDER.droppingH, 0, 0, Math.PI * 2)
+                ctx.fill()
+              } else {
+                // Landed splat
+                ctx.fillStyle = '#ddd'
+                ctx.beginPath()
+                ctx.ellipse(dx, dy, ATTACK_BIRDS_RENDER.droppingW + 1, 2, 0, 0, Math.PI * 2)
+                ctx.fill()
+                // Splat star effect
+                if (drop.splatTimer > 0) {
+                  const splatAlpha = drop.splatTimer / ATTACK_BIRDS_RENDER.splatDuration
+                  ctx.strokeStyle = `rgba(220, 220, 220, ${splatAlpha})`
+                  ctx.lineWidth = 1
+                  const r = ATTACK_BIRDS_RENDER.splatRadius * (1 - drop.splatTimer / ATTACK_BIRDS_RENDER.splatDuration + 0.5)
+                  for (let a = 0; a < 6; a++) {
+                    const angle = (a / 6) * Math.PI * 2
+                    ctx.beginPath()
+                    ctx.moveTo(dx, dy)
+                    ctx.lineTo(dx + Math.cos(angle) * r, dy + Math.sin(angle) * r * 0.5)
+                    ctx.stroke()
+                  }
+                }
+              }
+            }
+          }
+          // Squawk text and bubbles drawn in drawLandmarkBubbles for top Z-order
           break
         }
         case 'storm_cloud': {
@@ -803,12 +838,35 @@ export function createObstacleRenderer(deps: ObstacleRendererDeps) {
         }
         case 'attack_birds': {
           if (!s.triggered || s.triggerComplete) break
-          if ((s.triggerTimer || 0) < ATTACK_BIRDS_RENDER.squawkThreshold) {
+          // Per-bird squawk text
+          if (s.attackBirds) {
             ctx.fillStyle = COLORS.stickFigure
             ctx.font = FONTS.sm
-            ctx.globalAlpha = Math.max(0, 1 - (s.triggerTimer || 0) * ATTACK_BIRDS_RENDER.squawkAlphaFade)
-            ctx.fillText('SQUAWK!', screenX + ATTACK_BIRDS_RENDER.squawkXOffset, groundY + ATTACK_BIRDS_RENDER.squawkY)
+            for (const bird of s.attackBirds) {
+              if (bird.squawking > 0) {
+                const bx = screenX + bird.x
+                const by = groundY + bird.y
+                ctx.globalAlpha = Math.min(1, bird.squawking / ATTACK_BIRDS_RENDER.squawkTextDuration * 2)
+                ctx.fillText('SQUAWK!', bx + ATTACK_BIRDS_RENDER.squawkTextXOffset, by + ATTACK_BIRDS_RENDER.squawkTextYOffset)
+              }
+            }
             ctx.globalAlpha = 1
+          }
+          // Sisyphus speech bubble
+          if (s.attackBirdSisExclaimed && (s.triggerTimer || 0) < ATTACK_BIRDS_RENDER.shitStart) {
+            const sisScreenX = world.boulderDistance - world.worldScrollX
+            const sisGroundY = hillY(sisScreenX, height)
+            drawBubble(sisScreenX, sisGroundY - 50, attackBirdsSisExclamation, 'speech', {
+              font: FONTS.sm, maxWidth: 150, offsetX: ATTACK_BIRDS_RENDER.sisBubbleXOffset, offsetY: ATTACK_BIRDS_RENDER.sisBubbleYOffset,
+            })
+          }
+          // Boulder thought bubble
+          if (s.attackBirdBoulderThought && (s.triggerTimer || 0) < TIMING.attackBirdsDuration - 0.5) {
+            const boulderScreenX = world.boulderDistance - world.worldScrollX
+            const boulderGroundY = hillY(boulderScreenX, height)
+            drawBubble(boulderScreenX, boulderGroundY - 30, attackBirdsBoulderThought, 'thought', {
+              font: FONTS.sm, maxWidth: 160, offsetX: ATTACK_BIRDS_RENDER.boulderBubbleXOffset, offsetY: ATTACK_BIRDS_RENDER.boulderBubbleYOffset,
+            })
           }
           break
         }

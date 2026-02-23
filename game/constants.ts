@@ -217,7 +217,7 @@ export const TIMING = {
   alienLaserDuration: 8,        // total duration (arrival + active + departure)
   alienArrivalDuration: 2,      // seconds for UFO to fly in
   alienDepartDuration: 2,       // seconds for UFO to fly away upward
-  attackBirdsDuration: 3,
+  attackBirdsDuration: 5,
 
   // Flat idle harassment
   idleBirdDelay: 10,                          // seconds before Lou swoops in

@@ -105,7 +105,7 @@ interface GameLoopDeps {
   triggerBoulderExclamation: () => void
   triggerSisyphusExclamation: () => void
   declineContinue: () => void
-  play8BitSound: (type: 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup' | 'bark' | 'thunder' | 'laser') => void
+  play8BitSound: (type: 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup' | 'bark' | 'thunder' | 'laser' | 'squawk') => void
   render: () => void
   showGameOver: () => void
 }

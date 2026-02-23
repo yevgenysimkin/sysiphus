@@ -1,13 +1,15 @@
 import type { Obstacle } from './useGameState'
 import { TIMING, PHYSICS, SOUND_AUDIBLE_RANGE, OBSTACLE_BEHAVIOR, SPAWNING } from '~/game/constants'
+import { ATTACK_BIRDS_RENDER } from '~/game/constants-rendering'
 
 interface ObstacleUpdateDeps {
   world: {
     boulderDistance: number
+    worldScrollX: number
     pushDir: 1 | -1
     obstacles: Obstacle[]
   }
-  play8BitSound: (type: 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup' | 'bark' | 'thunder' | 'laser') => void
+  play8BitSound: (type: 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup' | 'bark' | 'thunder' | 'laser' | 'squawk') => void
 }
 
 export function createObstacleUpdater(deps: ObstacleUpdateDeps) {
@@ -83,18 +85,101 @@ export function createObstacleUpdater(deps: ObstacleUpdateDeps) {
         case 'attack_birds': {
           if (s.triggered && !s.triggerComplete) {
             s.triggerTimer = (s.triggerTimer || 0) + dt
+            const t = s.triggerTimer || 0
+            const R = ATTACK_BIRDS_RENDER
+
+            // Phase transitions
+            if (t < R.flyawayStart) {
+              if (t >= R.shitStart) s.attackBirdPhase = 'shit'
+              else if (t >= R.squawkStart) s.attackBirdPhase = 'squawk'
+              else s.attackBirdPhase = 'swarm'
+            } else {
+              s.attackBirdPhase = 'flyaway'
+            }
+
+            // Sisyphus exclamation at t=0.5
+            if (!s.attackBirdSisExclaimed && t >= R.sisExclaimTime) {
+              s.attackBirdSisExclaimed = true
+            }
+            // Boulder thought at t=3
+            if (!s.attackBirdBoulderThought && t >= R.boulderThoughtTime) {
+              s.attackBirdBoulderThought = true
+            }
+
+            // Target: relative offset from obstacle X to Sisyphus screen position
+            const targetRelX = world.boulderDistance - obs.worldX
+
             if (s.attackBirds) {
               for (const bird of s.attackBirds) {
-                bird.x += bird.vx * dt
-                bird.y += bird.vy * dt
                 bird.phase += dt * OBSTACLE_BEHAVIOR.attackBirdAnimSpeed
+
+                if (s.attackBirdPhase === 'swarm' || s.attackBirdPhase === 'squawk' || s.attackBirdPhase === 'shit') {
+                  // Orbit around Sisyphus position
+                  const orbitAngle = t * R.swarmOrbitSpeed + bird.phase
+                  const targetX = targetRelX + Math.cos(orbitAngle) * R.swarmOrbitRadius + (Math.sin(bird.phase * 1.3) * R.swarmRandomOffset)
+                  const targetY = -60 + Math.sin(orbitAngle * 0.7) * R.swarmOrbitRadius * 0.6 + (Math.cos(bird.phase * 0.9) * R.swarmRandomOffset)
+                  // Interpolate toward target
+                  bird.x += (targetX - bird.x) * dt * 3
+                  bird.y += (targetY - bird.y) * dt * 3
+                } else {
+                  // Flyaway: scatter outward and up
+                  bird.x += bird.vx * dt
+                  bird.y += bird.vy * dt
+                }
+
+                // Per-bird squawk timer
+                if (s.attackBirdPhase === 'squawk' || s.attackBirdPhase === 'shit') {
+                  bird.squawking = Math.max(0, bird.squawking - dt)
+                  bird.squawkTimer -= dt
+                  if (bird.squawkTimer <= 0) {
+                    bird.squawkTimer = R.squawkTimerMin + Math.random() * R.squawkTimerRange
+                    bird.squawking = R.squawkTextDuration
+                    if (dist < SOUND_AUDIBLE_RANGE) play8BitSound('squawk')
+                  }
+                }
               }
             }
-            if ((s.triggerTimer || 0) > TIMING.attackBirdsDuration) s.triggerComplete = true
+
+            // Droppings (shit phase)
+            if (!s.attackBirdDroppings) s.attackBirdDroppings = []
+            if (s.attackBirdPhase === 'shit' && s.attackBirds) {
+              // Spawn droppings from bird positions
+              if (Math.random() < dt * R.droppingSpawnRate) {
+                const bird = s.attackBirds[Math.floor(Math.random() * s.attackBirds.length)]
+                s.attackBirdDroppings.push({
+                  x: bird.x + (Math.random() - 0.5) * R.droppingSpawnXRange,
+                  y: bird.y + R.droppingSpawnYOffset,
+                  vy: 0,
+                  landed: false,
+                  splatTimer: 0,
+                })
+              }
+            }
+            // Update droppings
+            for (const drop of s.attackBirdDroppings) {
+              if (!drop.landed) {
+                drop.vy += R.droppingGravity * dt
+                drop.y += drop.vy * dt
+                if (drop.y >= 0) {
+                  drop.y = 0
+                  drop.landed = true
+                  drop.splatTimer = R.splatDuration
+                }
+              } else {
+                drop.splatTimer = Math.max(0, drop.splatTimer - dt)
+              }
+            }
+
+            if (t > TIMING.attackBirdsDuration) s.triggerComplete = true
           } else if (!s.triggered && dist < (obs.triggerProximity || OBSTACLE_BEHAVIOR.strayDogDefaultProximity)) {
             s.triggered = true
             s.triggerTimer = 0
-            // Spawn attack birds
+            s.attackBirdPhase = 'swarm'
+            s.attackBirdDroppings = []
+            s.attackBirdSisExclaimed = false
+            s.attackBirdBoulderThought = false
+            s.attackBirdTargetX = world.boulderDistance - world.worldScrollX
+            // Spawn attack birds at tree position, heading toward Sisyphus
             s.attackBirds = []
             for (let i = 0; i < OBSTACLE_BEHAVIOR.attackBirdCount; i++) {
               const angle = (i / OBSTACLE_BEHAVIOR.attackBirdCount) * Math.PI * 2
@@ -103,6 +188,8 @@ export function createObstacleUpdater(deps: ObstacleUpdateDeps) {
                 vx: Math.cos(angle) * OBSTACLE_BEHAVIOR.attackBirdVxMagnitude,
                 vy: Math.sin(angle) * OBSTACLE_BEHAVIOR.attackBirdVyMagnitude - OBSTACLE_BEHAVIOR.attackBirdVyDownOffset,
                 phase: i * OBSTACLE_BEHAVIOR.attackBirdPhaseStagger,
+                squawkTimer: ATTACK_BIRDS_RENDER.squawkTimerMin + Math.random() * ATTACK_BIRDS_RENDER.squawkTimerRange,
+                squawking: 0,
               })
             }
           }

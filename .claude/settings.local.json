@@ -23,7 +23,12 @@
       "Bash(git -C /Users/yevgenysimkin/AfM/sisyphus commit -m \"$\\(cat <<''EOF''\nAdds 11 new obstacles across all levels with config-driven placement\n\nReplaces hardcoded landmarks with game.obstacles.json config \\(17 entries,\nauto-mirrored\\). New obstacles: Stray Dog, Campfire, Sasquatch, Ancient Ruins,\nAttack Birds, Philosopher/Socrates, Storm Cloud, Mountain Goat, Alien Laser,\nAvalanche Warning, The Muses. Adds overlay rendering for event obstacles,\nupdateObstacles\\(\\) game loop, bark/thunder/laser sounds, and cast list entries.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git -C /Users/yevgenysimkin/AfM/sisyphus add composables/useGameLoop.ts composables/useRenderer.ts)",
       "Bash(git -C /Users/yevgenysimkin/AfM/sisyphus commit -m \"$\\(cat <<''EOF''\nFixes Sisyphus body mechanics: steeper back-lean, alternating arms, dog flee direction\n\nChanges torso lean to scale back dramatically at higher levels \\(50° back\nfrom surface normal at L6\\). Arms now alternate in opposition with elbow\ninversion clamped. Freezes arm animation during countdown. Stray dog runs\nahead of player along the hill instead of disappearing behind it.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git -C /Users/yevgenysimkin/AfM/sisyphus commit -m \"$\\(cat <<''EOF''\nFixes stray dog: runs downhill facing correct direction, follows hill contour\n\nDog now flees downhill \\(opposite push direction\\), flips sprite to face its\nrun direction, recomputes ground Y at actual position so it stays on the\nhill surface, and widens culling margin so it exits screen naturally.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git -C /Users/yevgenysimkin/AfM/sisyphus commit -m \"$\\(cat <<''EOF''\nFixes stray dog: runs downhill facing correct direction, follows hill contour\n\nDog now flees downhill \\(opposite push direction\\), flips sprite to face its\nrun direction, recomputes ground Y at actual position so it stays on the\nhill surface, and widens culling margin so it exits screen naturally.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(npx vue-tsc --noEmit --pretty)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vue-tsc:*)"
     ]
   }
 }

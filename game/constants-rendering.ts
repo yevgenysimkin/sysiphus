@@ -449,32 +449,32 @@ export const ANCIENT_RUINS = {
 } as const
 
 export const PHILOSOPHER = {
-  lineWidth: 2, headY: -35, headRadius: 6,
-  beardLX: -3, beardLY: 4, beardMidX: -1, beardMidY: 12, beardRX: 3,
-  bodyX: -3, bodyY: -15,
-  armThinkStartX: -3, armThinkMidX: 8, armThinkMidY: -25, armThinkEndX: 2, armThinkEndYOffset: 5,
-  armRestStartX: -3, armRestY: -20, armRestEndX: -15, armRestEndY: -12,
-  legLStartX: -3, legLStartY: -15, legLMidX: 10, legLMidY: -10, legLEndX: 8,
-  legRStartX: -3, legRStartY: -15, legRMidX: -10, legRMidY: -8, legREndX: -12,
-  rockX: -2, rockY: -8, rockW: 12, rockH: 6,
+  lineWidth: 2.5, headY: -77, headRadius: 13,
+  beardLX: -7, beardLY: 9, beardMidX: -2, beardMidY: 26, beardRX: 7,
+  bodyX: -7, bodyY: -33,
+  armThinkStartX: -7, armThinkMidX: 18, armThinkMidY: -55, armThinkEndX: 4, armThinkEndYOffset: 11,
+  armRestStartX: -7, armRestY: -44, armRestEndX: -33, armRestEndY: -26,
+  legLStartX: -7, legLStartY: -33, legLMidX: 22, legLMidY: -22, legLEndX: 18,
+  legRStartX: -7, legRStartY: -33, legRMidX: -22, legRMidY: -18, legREndX: -26,
+  rockX: -4, rockY: -18, rockW: 26, rockH: 13,
   thoughtFadeIn: 0.5, thoughtFadeOutStart: 4.5, thoughtFadeOutDuration: 5,
   thoughtAlpha: 0.8, thoughtMaxWidth: 120, thoughtYOffset: -30,
-  labelX: -18, labelY: 12,
+  labelX: -22, labelY: 22,
 } as const
 
 export const MOUNTAIN_GOAT = {
-  lineWidth: 2, yOffset: -5,
-  bodyW: 12, bodyH: 7, bodyY: -12,
-  headX: 14, headY: -18, headRadius: 5,
-  hornLStartX: 12, hornLStartY: -22, hornLCtrlX: 8, hornLCtrlY: -30, hornLEndX: 5, hornLEndY: -26,
-  hornRStartX: 16, hornRStartY: -22, hornRCtrlX: 20, hornRCtrlY: -30, hornREndX: 23, hornREndY: -26,
-  eyeX: 16, eyeY: -19, eyeRadius: 2, pupilRadius: 1,
-  blinkStartX: 14, blinkEndX: 18, blinkY: -19,
-  goateeStartX: 17, goateeStartY: -14, goateeEndX: 19, goateeEndY: -10,
-  legXPositions: [-8, -4, 4, 8] as readonly number[], legTopY: -6,
-  tailStartX: -12, tailStartY: -14, tailEndX: -16, tailEndY: -18,
+  lineWidth: 2.5, yOffset: -12,
+  bodyW: 30, bodyH: 18, bodyY: -30,
+  headX: 35, headY: -45, headRadius: 12,
+  hornLStartX: 30, hornLStartY: -55, hornLCtrlX: 20, hornLCtrlY: -75, hornLEndX: 12, hornLEndY: -65,
+  hornRStartX: 40, hornRStartY: -55, hornRCtrlX: 50, hornRCtrlY: -75, hornREndX: 58, hornREndY: -65,
+  eyeX: 40, eyeY: -48, eyeRadius: 5, pupilRadius: 2.5,
+  blinkStartX: 35, blinkEndX: 45, blinkY: -48,
+  goateeStartX: 42, goateeStartY: -35, goateeEndX: 48, goateeEndY: -25,
+  legXPositions: [-20, -10, 10, 20] as readonly number[], legTopY: -15,
+  tailStartX: -30, tailStartY: -35, tailEndX: -40, tailEndY: -45,
   // Ledge
-  ledgeXMin: -20, ledgeXMax: 20, ledgeYMin: 0, ledgeYMax: 8, ledgeCornerXMin: -25, ledgeCornerXMax: 25,
+  ledgeXMin: -40, ledgeXMax: 50, ledgeYMin: 0, ledgeYMax: 12, ledgeCornerXMin: -50, ledgeCornerXMax: 60,
 } as const
 
 export const AVALANCHE_RENDER = {
@@ -489,21 +489,21 @@ export const AVALANCHE_RENDER = {
 
 export const MUSES = {
   // Ledge
-  ledgeXMin: -35, ledgeYMin: -5, ledgeCornerXMin: -40, ledgeYMax: 5, ledgeCornerXMax: 40, ledgeXMax: 35,
+  ledgeXMin: -60, ledgeYMin: -5, ledgeCornerXMin: -70, ledgeYMax: 8, ledgeCornerXMax: 70, ledgeXMax: 60,
   // Figures
-  xBase: -20, xSpacing: 20,
-  bouncePhaseOffset: 1.2, headYOffset: -40,
+  xBase: -35, xSpacing: 35,
+  bouncePhaseOffset: 1.2, headYOffset: -80,
   armAnglePhaseOffset: 0.8, armAngleAmplitude: 0.3,
-  lineWidth: 2, headRadius: 5,
-  bodyYOffsetHead: 5, bodyYOffsetFoot: -12,
-  armPointXOffset: -12, armPointYOffset: 5, armPointSwingX: -5, armPointSwingY: 3,
-  armOtherXOffset: 8, armOtherYOffset: -15,
-  legXOffset: 6, legYOffset: -5,
-  laughAmpMult: 2, mouthRadius: 2, mouthFillHeightScale: 0.5,
+  lineWidth: 2.5, headRadius: 10,
+  bodyYOffsetHead: 10, bodyYOffsetFoot: -25,
+  armPointXOffset: -24, armPointYOffset: 10, armPointSwingX: -10, armPointSwingY: 6,
+  armOtherXOffset: 16, armOtherYOffset: -30,
+  legXOffset: 12, legYOffset: -10,
+  laughAmpMult: 2, mouthRadius: 4, mouthFillHeightScale: 0.5,
   // HA HA HA
   laughTextAlphaSineScale: 0.5, laughTextAlphaOffset: 0.3, laughTextAlphaMin: 0.2,
-  laughTextFloatFreq: 0.8, laughTextFloatAmp: 5, laughTextXOffset: -22,
-  labelX: -22, labelY: 16,
+  laughTextFloatFreq: 0.8, laughTextFloatAmp: 5, laughTextXOffset: -35,
+  labelX: -35, labelY: 22,
 } as const
 
 // ── Overlay Obstacles ───────────────────────────────────────────────
@@ -512,7 +512,23 @@ export const OVERLAY_CULL = { xMin: -200, xMax: 200 } as const
 
 export const ATTACK_BIRDS_RENDER = {
   lineWidth: 1.5, flapAmp: 5, wingXMin: -6, wingXMax: 6,
-  squawkThreshold: 2, squawkAlphaFade: 0.5, squawkXOffset: -15, squawkY: -90,
+  // Phase timing (seconds)
+  swarmEnd: 2, squawkStart: 1, squawkEnd: 3,
+  shitStart: 2, shitEnd: 4, flyawayStart: 4,
+  // Swarm behavior
+  swarmOrbitRadius: 40, swarmOrbitSpeed: 4, swarmRandomOffset: 15,
+  // Squawk text
+  squawkTextDuration: 0.3, squawkTimerMin: 0.4, squawkTimerRange: 0.8,
+  squawkTextXOffset: -10, squawkTextYOffset: -12,
+  // Droppings
+  droppingW: 3, droppingH: 4, droppingGravity: 120,
+  droppingSpawnRate: 3, droppingSpawnXRange: 30, droppingSpawnYOffset: 5,
+  splatRadius: 5, splatDuration: 0.3,
+  // Sisyphus exclamation
+  sisExclaimTime: 0.5, boulderThoughtTime: 3,
+  // Sisyphus bubble
+  sisBubbleXOffset: -10, sisBubbleYOffset: -50,
+  boulderBubbleXOffset: -20, boulderBubbleYOffset: -50,
 } as const
 
 export const STORM = {
