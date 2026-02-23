@@ -11,9 +11,9 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // Validate initials (3 uppercase letters)
-    const initials = String(body.initials).toUpperCase().slice(0, 3)
-    if (!/^[A-Z]{3}$/.test(initials)) {
+    // Validate initials (1-3 uppercase letters)
+    const initials = String(body.initials).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)
+    if (initials.length === 0) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Invalid initials'
@@ -23,15 +23,16 @@ export default defineEventHandler(async (event) => {
     const score = Math.floor(Math.max(0, body.score))
 
     // Get existing scores
-    const scores = await storage.getItem<{ initials: string; score: number }[]>('scores') || []
+    const scores = await storage.getItem<{ initials: string; score: number; createdAt: number }[]>('scores') || []
 
     // Add new score
     scores.push({
       initials,
-      score
+      score,
+      createdAt: Date.now(),
     })
 
-    // Keep top 100 scores
+    // Keep top 100 by score
     scores.sort((a, b) => b.score - a.score)
     const trimmedScores = scores.slice(0, 100)
 

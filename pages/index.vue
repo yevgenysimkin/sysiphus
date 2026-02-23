@@ -17,7 +17,9 @@
 
     <StartScreen
       :visible="gameState === 'start'"
+      :leaderboard="leaderboard"
       @start="startGame"
+      @refresh="fetchLeaderboard"
     />
 
     <ContinuePrompt
@@ -49,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import GameUI from '~/components/game/GameUI.vue'
 import StartScreen from '~/components/game/StartScreen.vue'
 import ContinuePrompt from '~/components/game/ContinuePrompt.vue'
@@ -61,6 +63,7 @@ import { useAudio } from '~/composables/useAudio'
 import { useInput } from '~/composables/useInput'
 import { useRenderer } from '~/composables/useRenderer'
 import { useGameLoop } from '~/composables/useGameLoop'
+import { useMusic } from '~/composables/useMusic'
 import { SPAWNING } from '~/game/constants'
 
 const gameCanvas = ref<HTMLCanvasElement | null>(null)
@@ -76,8 +79,30 @@ const {
 } = useGameState()
 
 const { getLevelAtDistance, getAngleAtDistance, getHeightAtWorldDistance, getHillYAtScreenX } = usePhysics()
-const { initAudio, play8BitSound, closeAudio, muted, toggleMute } = useAudio()
+const { initAudio, play8BitSound, closeAudio, getAudioCtx, muted, toggleMute } = useAudio()
+const { startMusic, stopMusic } = useMusic(getAudioCtx, muted)
 const { handleClick, handleKeyDown, registerTap } = useInput(gameState, intensity, world)
+
+// Map game states to music tracks
+watch(gameState, (state) => {
+  switch (state) {
+    case 'countdown':
+    case 'playing':
+    case 'getting_up':
+      startMusic('pushing')
+      break
+    case 'rolling_back':
+    case 'rolling_over':
+    case 'returning':
+      startMusic('rolling')
+      break
+    case 'credits':
+      startMusic('credits')
+      break
+    default:
+      stopMusic()
+  }
+})
 
 const { initCanvas, resizeCanvas, render } = useRenderer({
   gameCanvas,
@@ -146,10 +171,11 @@ async function submitScore() {
   if (!canSubmit.value || initialsSubmitted.value) return
   initialsSubmitted.value = true
   const initialsStr = initials.value.join('').toUpperCase()
+  const submittedScore = Math.floor(finalScore.value)
   try {
     await $fetch('/api/leaderboard', {
       method: 'POST',
-      body: { initials: initialsStr, score: Math.floor(finalScore.value) }
+      body: { initials: initialsStr, score: submittedScore }
     })
     await fetchLeaderboard()
   } catch (e) {
@@ -215,6 +241,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('resize', resizeCanvas)
   loop.stopLoop()
+  stopMusic()
   closeAudio()
 })
 </script>

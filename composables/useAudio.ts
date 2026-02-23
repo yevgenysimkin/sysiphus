@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { AUDIO } from '~/game/constants-audio'
 
-type SoundType = 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup' | 'bark' | 'thunder' | 'laser'
+type SoundType = 'footstep' | 'huff' | 'push' | 'slip' | 'crush' | 'roll' | 'levelup' | 'bark' | 'thunder' | 'laser' | 'squawk'
 
 let audioCtx: AudioContext | null = null
 const muted = ref(false)
@@ -138,12 +138,28 @@ export function useAudio() {
         osc.stop(now + p.duration)
         break
       }
+      case 'squawk': {
+        const p = AUDIO.squawk
+        osc.type = 'square'
+        osc.frequency.setValueAtTime(p.freqStart, now)
+        osc.frequency.setValueAtTime(p.freqPeak, now + p.peakTime)
+        osc.frequency.exponentialRampToValueAtTime(p.freqEnd, now + p.duration)
+        gain.gain.setValueAtTime(p.gain, now)
+        gain.gain.exponentialRampToValueAtTime(p.gainEnd, now + p.duration)
+        osc.start(now)
+        osc.stop(now + p.duration)
+        break
+      }
     }
+  }
+
+  function getAudioCtx(): AudioContext | null {
+    return audioCtx
   }
 
   function closeAudio() {
     if (audioCtx) audioCtx.close()
   }
 
-  return { initAudio, play8BitSound, closeAudio, muted, toggleMute }
+  return { initAudio, play8BitSound, closeAudio, getAudioCtx, muted, toggleMute }
 }

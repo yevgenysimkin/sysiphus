@@ -22,7 +22,8 @@ export type ObstacleType =
   | 'avalanche_warning' | 'the_muses'
 
 export interface SmokeParticle { x: number; y: number; vy: number; alpha: number; size: number }
-export interface AttackBird { x: number; y: number; vx: number; vy: number; phase: number }
+export interface AttackBird { x: number; y: number; vx: number; vy: number; phase: number; squawkTimer: number; squawking: number }
+export interface BirdDropping { x: number; y: number; vy: number; landed: boolean; splatTimer: number }
 export interface Raindrop { x: number; y: number; speed: number }
 export interface FallingRock { x: number; y: number; vy: number; size: number; rotation: number }
 
@@ -42,6 +43,11 @@ export interface ObstacleState {
   triggered?: boolean
   triggerComplete?: boolean
   triggerTimer?: number
+  attackBirdPhase?: 'swarm' | 'squawk' | 'shit' | 'flyaway'
+  attackBirdDroppings?: BirdDropping[]
+  attackBirdSisExclaimed?: boolean
+  attackBirdBoulderThought?: boolean
+  attackBirdTargetX?: number  // Sisyphus screen X at trigger time
   // Storm Cloud
   raindrops?: Raindrop[]
   lightningTimer?: number
@@ -96,7 +102,7 @@ function initObstacleState(type: ObstacleType): ObstacleState {
     case 'sasquatch':
       return { ...base, squatchPeekAmount: SPAWNING.sasquatchInitialPeek, squatchHiding: false }
     case 'attack_birds':
-      return { ...base, attackBirds: [], triggered: false, triggerComplete: false, triggerTimer: 0 }
+      return { ...base, attackBirds: [], triggered: false, triggerComplete: false, triggerTimer: 0, attackBirdPhase: 'swarm' as const, attackBirdDroppings: [], attackBirdSisExclaimed: false, attackBirdBoulderThought: false, attackBirdTargetX: 0 }
     case 'storm_cloud':
       return { ...base, raindrops: [], lightningTimer: 0, lightningFlash: 0, triggered: false, triggerComplete: false, triggerTimer: 0, stormPhase: 'arriving' as const, stormCloudX: 0, stormCloudY: 0, stormThoughtIndex: 0, stormThoughtTimer: 0 }
     case 'alien_laser':
@@ -148,7 +154,7 @@ export function useGameState() {
   const initialInputs = ref<(HTMLInputElement | null)[]>([null, null, null])
   const initialsSubmitted = ref(false)
 
-  const canSubmit = computed(() => initials.value.every(i => i.length === 1))
+  const canSubmit = computed(() => initials.value.some(i => i.length === 1))
 
   const intensityColor = computed(() => {
     if (intensity.value > 60) return COLORS.intensityGreen
