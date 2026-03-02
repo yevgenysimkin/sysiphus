@@ -28,7 +28,8 @@
       "Bash(wc:*)",
       "Bash(npx vue-tsc --noEmit --pretty)",
       "Bash(npx tsc:*)",
-      "Bash(npx vue-tsc:*)"
+      "Bash(npx vue-tsc:*)",
+      "Bash(git tag:*)"
     ]
   }
 }
